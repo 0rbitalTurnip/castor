@@ -10,11 +10,8 @@ import (
 	"github.com/stupside/castor/services/mediaserver/internal/source/timeline"
 )
 
-// Timeline follows a live media playlist, and a spliced fMP4 one whose init may change at a seam; others are read directly.
+// Timeline follows every media playlist: castor reads its segments ahead of the reader, several at once.
 func (Format) Timeline(c source.Client, in media.Input, _ media.TrackKind) timeline.Source {
-	if !in.Fetch.Live && (!in.Fetch.Spliced || in.Fetch.Framing != media.FramingOutOfBand) {
-		return nil
-	}
 	return follower{Client: c, Headers: in.Headers, url: in.URL}
 }
 

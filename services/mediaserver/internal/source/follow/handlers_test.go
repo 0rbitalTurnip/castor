@@ -60,7 +60,7 @@ func TestABodyThatBreaksAfterItsFirstByteDoesNotSucceedAsAPartialSegment(t *test
 		defer resp.Body.Close()
 		_, err = io.ReadAll(resp.Body)
 	}
-	if err == nil {
+	if err == nil && resp.StatusCode == http.StatusOK {
 		t.Fatal("a truncated fragment was answered as a complete HTTP response")
 	}
 }

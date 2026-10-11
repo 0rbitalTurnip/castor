@@ -1,0 +1,135 @@
+package follow
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/stupside/castor/services/mediaserver/internal/source/timeline"
+)
+
+// throttled is an origin serving each request at a fixed pace, whatever else it serves at once, and hanging the first request of hung.
+type throttled struct {
+	window timeline.Window
+	each   time.Duration
+	hung   map[string]bool
+
+	mu      sync.Mutex
+	asked   map[string]int
+	busy    int
+	busiest int
+}
+
+func (o *throttled) Window(context.Context) (timeline.Window, error) { return o.window, nil }
+
+func (o *throttled) Read(ctx context.Context, uri string, _ timeline.Range) (io.ReadCloser, error) {
+	o.mu.Lock()
+	o.asked[uri]++
+	first := o.asked[uri] == 1
+	o.busy++
+	o.busiest = max(o.busiest, o.busy)
+	o.mu.Unlock()
+	defer func() {
+		o.mu.Lock()
+		o.busy--
+		o.mu.Unlock()
+	}()
+	wait := o.each
+	if first && o.hung[uri] {
+		wait = time.Hour
+	}
+	select {
+	case <-time.After(wait):
+		return io.NopCloser(bytes.NewReader([]byte(uri))), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func origin(segments int, each time.Duration, hung ...string) *throttled {
+	o := &throttled{each: each, asked: map[string]int{}, hung: map[string]bool{}}
+	for i := range segments {
+		uri := fmt.Sprintf("https://origin.example/%d.ts", i)
+		o.window.Segments = append(o.window.Segments, timeline.Segment{URI: uri, Duration: 4 * time.Second, Place: timeline.Place{Start: int64(i), End: int64(i + 1)}})
+	}
+	for _, h := range hung {
+		o.hung[h] = true
+	}
+	o.window.Closed = true
+	return o
+}
+
+// played asks for every segment in order, as a reader does, and reports how long it took.
+func played(t *testing.T, f *feed, segments int) time.Duration {
+	t.Helper()
+	began := time.Now()
+	for i := range segments {
+		f.mu.Lock()
+		s, ok := f.ledger.Entry(int64(i))
+		f.mu.Unlock()
+		if !ok {
+			t.Fatalf("segment %d is not listed", i)
+		}
+		b, err := f.fetched(t.Context(), int64(i), s)
+		if err != nil || string(b) != s.URI {
+			t.Fatalf("segment %d = %q, %v; want its bytes", i, b, err)
+		}
+	}
+	return time.Since(began)
+}
+
+func TestSegmentsAreReadAheadSeveralAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := origin(12, 2*time.Second)
+		f := newFeed("primary", o, time.Minute, nil)
+		if err := f.start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		// One at a time, 12 segments at 2s each would take 24s.
+		if took := played(t, f, 12); took > 8*time.Second {
+			t.Errorf("reading 12 segments took %v, want them read several at once", took)
+		}
+		if o.busiest > parallel {
+			t.Errorf("the origin served %d reads at once, want at most %d", o.busiest, parallel)
+		}
+	})
+}
+
+func TestASegmentReadThatHangsIsAskedForAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := origin(3, time.Second, "https://origin.example/1.ts")
+		f := newFeed("primary", o, time.Minute, nil)
+		if err := f.start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if took := played(t, f, 3); took > hedgeDefault+2*time.Second {
+			t.Errorf("a hung read held playback %v, want it asked again within the hedge deadline", took)
+		}
+		if o.asked["https://origin.example/1.ts"] != 2 {
+			t.Errorf("the hung segment was asked for %d times, want twice", o.asked["https://origin.example/1.ts"])
+		}
+	})
+}
+
+func TestReadingAheadStopsAtTheWindow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := origin(40, 100*time.Millisecond)
+		f := newFeed("primary", o, time.Minute, nil)
+		if err := f.start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		played(t, f, 1)
+		synctest.Wait()
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		// The reader asked for segment 0; 30s ahead of it is 8 segments of 4s.
+		if read := len(o.asked); read > 1+int(ahead/(4*time.Second))+1 {
+			t.Errorf("read %d of 40 segments for a reader at the first, want only the window ahead of it", read)
+		}
+	})
+}

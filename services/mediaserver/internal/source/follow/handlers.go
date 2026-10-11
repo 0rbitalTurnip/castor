@@ -34,18 +34,17 @@ func (f *feed) segment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if s.Map != nil && repackaging {
-		f.repackaged(ctx, w, s)
-		return
-	}
-	body, err := f.read(ctx, s)
+	body, err := f.fetched(ctx, sequence, s)
 	if err != nil {
 		failed(w, err)
 		return
 	}
-	defer func() { _ = body.Close() }()
+	if s.Map != nil && repackaging {
+		f.repackaged(ctx, w, s, body)
+		return
+	}
 	f.answer(ctx, w, "application/octet-stream", s, "relay", func(out io.Writer) error {
-		_, err := io.Copy(out, body)
+		_, err := out.Write(body)
 		return err
 	})
 }
@@ -65,7 +64,7 @@ func (f *feed) answer(ctx context.Context, w http.ResponseWriter, kind string, s
 }
 
 // repackaged serves an fMP4 fragment as MPEG-TS, its init section ahead of it.
-func (f *feed) repackaged(ctx context.Context, w http.ResponseWriter, s timeline.Segment) {
+func (f *feed) repackaged(ctx context.Context, w http.ResponseWriter, s timeline.Segment, fragment []byte) {
 	carries, err := f.carries(ctx, *s.Map)
 	if err == nil && (!carries || (s.Key != timeline.Key{} && !decryptable(s.Key))) {
 		// The playlist already names it as MPEG-TS, so a segment that cannot become one is a loss to report.
@@ -75,18 +74,13 @@ func (f *feed) repackaged(ctx context.Context, w http.ResponseWriter, s timeline
 	if err == nil {
 		init, err = f.initBytes(ctx, *s.Map)
 	}
-	var body io.ReadCloser
-	if err == nil {
-		body, err = f.read(ctx, s)
-	}
 	if err != nil {
 		slog.WarnContext(ctx, "castor could not serve a segment", "input", f.name, "uri", s.URI, "error", err)
 		failed(w, err)
 		return
 	}
-	defer func() { _ = body.Close() }()
 	f.answer(ctx, w, media.MPEGTS, s, "repackage", func(out io.Writer) error {
-		return f.repackage(ctx, io.MultiReader(bytes.NewReader(init), body), out)
+		return f.repackage(ctx, io.MultiReader(bytes.NewReader(init), bytes.NewReader(fragment)), out)
 	})
 }
 

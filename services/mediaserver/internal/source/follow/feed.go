@@ -35,11 +35,19 @@ type feed struct {
 	keys      registry[string]
 	initsHeld resources[timeline.Map]
 	keysHeld  resources[string]
+
+	// life bounds every read ahead of the reader; reached is the furthest segment it asked for.
+	life     context.Context
+	reached  int64
+	slots    map[int64]*slot
+	inFlight int
+	// took is how long recent segment reads took, which sets when a slow one is asked for again.
+	took []time.Duration
 }
 
 // newFeed follows source under name, giving each origin read patience; repackage, when set, serves fMP4 as MPEG-TS.
 func newFeed(name string, source timeline.Source, patience time.Duration, repackage Repackage) *feed {
-	return &feed{name: name, source: source, patience: patience, repackage: repackage, carriage: map[timeline.Map]bool{}}
+	return &feed{name: name, source: source, patience: patience, repackage: repackage, carriage: map[timeline.Map]bool{}, slots: map[int64]*slot{}, reached: -1, life: context.Background()}
 }
 
 // refresh reads the origin's window and merges it.
@@ -75,8 +83,9 @@ func (f *feed) refresh(ctx context.Context) error {
 // startTries is how often a feed's first window is asked for: an origin's passing failure must not cost the link.
 const startTries = 3
 
-// start reads the window a feed begins from, again after a passing failure, never after the origin's final no.
+// start reads the window a feed begins from, again after a passing failure, never after the origin's final no; ctx bounds its reads ahead.
 func (f *feed) start(ctx context.Context) error {
+	f.life = ctx
 	var err error
 	for try := range startTries {
 		if err = f.refresh(ctx); err == nil || refusal(err) != 0 || try == startTries-1 {

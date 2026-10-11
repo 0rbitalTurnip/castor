@@ -26,7 +26,9 @@ func New(client source.Client, formats source.Formats, patience time.Duration, r
 }
 
 // Republish points each followed input at its republished timeline; the func stops serving them.
-func (r Republisher) Republish(ctx context.Context, program media.Program) (media.Program, func() error, error) {
+func (r Republisher) Republish(parent context.Context, program media.Program) (media.Program, func() error, error) {
+	// Reads ahead of the reader outlive no read: stopping the republish ends them.
+	ctx, cancel := context.WithCancel(parent)
 	var feeds []*feed
 	followed := map[media.InputID]bool{}
 	for _, in := range program.Inputs {
@@ -34,10 +36,16 @@ func (r Republisher) Republish(ctx context.Context, program media.Program) (medi
 		if src == nil {
 			continue
 		}
-		feed := newFeed(string(in.ID), src, r.patience, r.repackage)
+		// Only a timeline that restarts at its seams needs its fragments made MPEG-TS; others are relayed as the origin sent them.
+		repackage := r.repackage
+		if fetch := in.Fetching(); !fetch.Live && !fetch.Spliced {
+			repackage = nil
+		}
+		feed := newFeed(string(in.ID), src, r.patience, repackage)
 		if err := feed.start(ctx); err != nil {
 			// A representation has no reading but castor's; a playlist castor cannot follow stays ffmpeg's to read.
 			if in.Representation != "" {
+				cancel()
 				return media.Program{}, nil, fmt.Errorf("reading the %s input's presentation: %w", in.ID, err)
 			}
 			slog.WarnContext(ctx, "castor could not read this input's timeline, so ffmpeg reads the origin directly",
@@ -47,10 +55,12 @@ func (r Republisher) Republish(ctx context.Context, program media.Program) (medi
 		feeds, followed[in.ID] = append(feeds, feed), true
 	}
 	if len(feeds) == 0 {
+		cancel()
 		return program, func() error { return nil }, nil
 	}
 	server, err := serve(feeds...)
 	if err != nil {
+		cancel()
 		return media.Program{}, nil, err
 	}
 	out := program.Clone()
@@ -61,7 +71,7 @@ func (r Republisher) Republish(ctx context.Context, program media.Program) (medi
 			slog.InfoContext(ctx, "castor follows this input's timeline", "input", in.ID, "origin", in.URL.Redacted(), "republished", out.Inputs[i].URL)
 		}
 	}
-	return out, server.Close, nil
+	return out, func() error { cancel(); return server.Close() }, nil
 }
 
 // reads is the kind of track a program reads from input: the one it requires, the first it names otherwise.

@@ -19,9 +19,11 @@ func input(t *testing.T, live bool) media.Input {
 	}
 }
 
-func TestAPlaylistThatEndedHasNoTimelineToFollow(t *testing.T) {
-	if follow := (Format{}).Timeline(&sourcetest.Document{Body: mediaPlaylist, Status: http.StatusOK}, input(t, false), media.TrackVideo); follow != nil {
-		t.Errorf("an ended playlist is followed by %T, want it read directly", follow)
+func TestAPlaylistThatEndedIsFollowedToo(t *testing.T) {
+	follow := (Format{}).Timeline(&sourcetest.Document{Body: mediaPlaylist, Status: http.StatusOK}, input(t, false), media.TrackVideo)
+	w, err := follow.Window(t.Context())
+	if err != nil || !w.Closed || len(w.Segments) == 0 {
+		t.Errorf("an ended playlist read as %+v (%v), want its closed list of segments", w, err)
 	}
 }
 
