@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -236,5 +237,51 @@ func TestAShowIsDrilledIntoUntilAnEpisodeIsChosen(t *testing.T) {
 	want := Selection{Kind: KindEpisode, TMDBID: "2316", Title: "The Office · S01E02 · Diversity Day", Season: 1, Episode: 2}
 	if got := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(model).sel; got == nil || *got != want {
 		t.Errorf("selected %+v, want %+v", got, want)
+	}
+}
+
+func TestDrilldownDoesNotQuitOnQ(t *testing.T) {
+	m := newModel(t.Context(), shelf{}, "")
+	m, _ = drive(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	tv, _ := shelf{}.TV(t.Context(), 0)
+	m, _ = drive(t, m, tvDoneMsg{tv: tv})
+
+	_, cmd := drive(t, m, runes("q"))
+	if cmd != nil {
+		if _, isQuit := cmd().(tea.QuitMsg); isQuit {
+			t.Fatal("q in the drilldown quit the program")
+		}
+	}
+}
+
+func TestADiscoverPageLandingUnderAQueryLeavesTheSearchRows(t *testing.T) {
+	m := newModel(t.Context(), shelf{}, "")
+	m, _ = drive(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.mode = modeDiscover
+	m.disc.tok = 1
+	m.query.SetValue("office")
+	m.results.SetItems(toResultItems([]tmdb.SearchResult{office}))
+
+	m, _ = drive(t, m, discoverDoneMsg{tok: 1, page: 1, res: []tmdb.SearchResult{matrix}, totalPages: 1})
+
+	if got := m.selectedResult(); got == nil || got.ID != office.ID {
+		t.Fatalf("selected %+v, want the search row to stay under an active query", got)
+	}
+	m, _ = drive(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if got := m.selectedResult(); got == nil || got.ID != matrix.ID {
+		t.Fatalf("selected %+v after clearing the query, want the discover page that landed meanwhile", got)
+	}
+}
+
+func TestTheSpinnerStopsTickingOnceNothingLoads(t *testing.T) {
+	m := newModel(t.Context(), shelf{}, "")
+	m.genres.loaded = true
+	m.loading = false
+	if _, cmd := drive(t, m, spinner.TickMsg{}); cmd != nil {
+		t.Fatal("an idle spinner re-armed its tick")
+	}
+	m.loading = true
+	if _, cmd := drive(t, m, spinner.TickMsg{}); cmd == nil {
+		t.Fatal("a loading spinner stopped ticking")
 	}
 }

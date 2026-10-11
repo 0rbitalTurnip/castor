@@ -41,31 +41,26 @@ func Target(ctx context.Context, devices castorv1connect.DeviceServiceClient, d 
 	return nil, fmt.Errorf("device %q (type %s) not found", d.Name, d.Type)
 }
 
+var deviceTypes = map[string]castorv1.DeviceType{
+	"dlna":       castorv1.DeviceType_DEVICE_TYPE_DLNA,
+	"chromecast": castorv1.DeviceType_DEVICE_TYPE_CHROMECAST,
+	"roku":       castorv1.DeviceType_DEVICE_TYPE_ROKU,
+}
+
 func configuredDeviceType(name string) (castorv1.DeviceType, error) {
-	switch name {
-	case "dlna":
-		return castorv1.DeviceType_DEVICE_TYPE_DLNA, nil
-	case "chromecast":
-		return castorv1.DeviceType_DEVICE_TYPE_CHROMECAST, nil
-	case "roku":
-		return castorv1.DeviceType_DEVICE_TYPE_ROKU, nil
-	default:
+	kind, ok := deviceTypes[name]
+	if !ok {
 		return castorv1.DeviceType_DEVICE_TYPE_UNSPECIFIED, fmt.Errorf("unknown device type: %q", name)
 	}
+	return kind, nil
 }
 
 // DeviceTypeName is the family name shown by scan and the device picker, also used in configuration.
 func DeviceTypeName(kind castorv1.DeviceType) string {
-	switch kind {
-	case castorv1.DeviceType_DEVICE_TYPE_DLNA:
-		return "dlna"
-	case castorv1.DeviceType_DEVICE_TYPE_CHROMECAST:
-		return "chromecast"
-	case castorv1.DeviceType_DEVICE_TYPE_ROKU:
-		return "roku"
-	case castorv1.DeviceType_DEVICE_TYPE_UNSPECIFIED:
-		return "unspecified"
-	default:
-		return "unknown"
+	for name, k := range deviceTypes {
+		if k == kind {
+			return name
+		}
 	}
+	return "unknown"
 }

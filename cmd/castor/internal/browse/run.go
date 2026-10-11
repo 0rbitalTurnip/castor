@@ -30,15 +30,20 @@ type Catalog interface {
 	Poster(ctx context.Context, posterPath string) (io.ReadCloser, error)
 }
 
-// Run asks which device to cast to, unless d pins one, then which title; chosen is false when the operator leaves without both.
-func Run(ctx context.Context, devices castorv1connect.DeviceServiceClient, catalog Catalog, d cast.Device) (to *castorv1.Target, sel Selection, chosen bool, err error) {
+// Run asks which device to cast to, unless d pins one or dryRun casts to none, then which title; chosen is false when the operator leaves without both.
+func Run(ctx context.Context, devices castorv1connect.DeviceServiceClient, catalog Catalog, d cast.Device, dryRun bool) (to *castorv1.Target, sel Selection, chosen bool, err error) {
 	err = held(func() error {
-		var name, typ string
-		var err error
-		if to, name, typ, err = pickDevice(ctx, devices, d); err != nil || to == nil {
-			return err
+		badge := "DRY RUN"
+		if !dryRun {
+			var name, typ string
+			var err error
+			if to, name, typ, err = pickDevice(ctx, devices, d); err != nil || to == nil {
+				return err
+			}
+			badge = strings.ToUpper(typ) + "  " + name
 		}
-		if sel, chosen, err = pickTitle(ctx, catalog, strings.ToUpper(typ)+"  "+name); err != nil {
+		var err error
+		if sel, chosen, err = pickTitle(ctx, catalog, badge); err != nil {
 			return fmt.Errorf("browse: %w", err)
 		}
 		return nil

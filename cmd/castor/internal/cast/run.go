@@ -23,16 +23,16 @@ func Run(ctx context.Context, casts castorv1connect.CastServiceClient, to *casto
 		return err
 	}
 	id := started.GetCastId()
-	server := FromServer(slog.Default().Handler())
+	server := FromServer()
 	ended, err := follow(ctx, casts, id, lines.level(), server)
 	if ctx.Err() == nil && err == nil {
-		return outcome(ended, err)
+		return outcome(ended)
 	}
 	// An interrupted command or broken watch stops the cast and waits for the device to be released.
 	stopping, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopGrace)
 	defer cancel()
 	if _, err := casts.Stop(stopping, &castorv1.StopRequest{CastId: id}); err != nil {
-		slog.DebugContext(ctx, "stopping cast", "error", err)
+		slog.WarnContext(ctx, "stopping the cast", "error", err)
 	}
 	_, _ = follow(stopping, casts, id, nil, server)
 	if ctx.Err() == nil {
@@ -67,10 +67,7 @@ func follow(ctx context.Context, casts castorv1connect.CastServiceClient, id str
 }
 
 // outcome is a cast's end as the command returns it.
-func outcome(ended *castorv1.Ended, err error) error {
-	if err != nil {
-		return err
-	}
+func outcome(ended *castorv1.Ended) error {
 	switch result := ended.GetResult().(type) {
 	case *castorv1.Ended_Completed:
 		return nil

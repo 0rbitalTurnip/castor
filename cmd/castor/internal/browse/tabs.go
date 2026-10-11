@@ -96,9 +96,14 @@ func loadTopCmd(ctx context.Context, c Catalog, t tabID) tea.Cmd {
 }
 
 func (m model) onTopsLoaded(msg topsLoadedMsg) (tea.Model, tea.Cmd) {
-	m.loading = false
+	current := msg.tab == m.tab
+	if current {
+		m.loading = false
+	}
 	if msg.err != nil {
-		m.err = msg.err
+		if current {
+			m.err = msg.err
+		}
 		return m, nil
 	}
 	items := toResultItems(msg.res)

@@ -35,12 +35,13 @@ func castCommand(local Local) *cli.Command {
 			if err := cfg.browsable(); err != nil {
 				return err
 			}
-			api, lines, release, err := dial(ctx, cmd, cfg, local)
+			api, lines, release, err := dial(ctx, cmd, cfg.API, local)
 			if err != nil {
 				return err
 			}
 			defer release()
-			to, sel, chosen, err := browse.Run(ctx, api.devices, tmdb.New(cfg.TMDB), cfg.Device)
+			dry := cmd.Bool(dryRunFlag)
+			to, sel, chosen, err := browse.Run(ctx, api.devices, tmdb.New(cfg.TMDB), cfg.Device, dry)
 			if err != nil || !chosen {
 				return err
 			}
@@ -48,10 +49,10 @@ func castCommand(local Local) *cli.Command {
 			if sel.Kind == browse.KindEpisode {
 				urls = cfg.Sources.EpisodeURLs(sel.TMDBID, sel.Season, sel.Episode)
 			}
-			fmt.Printf("Casting: %s\n", sel.Title)
-			if cmd.Bool(dryRunFlag) {
+			if dry {
 				return cast.DryRun(ctx, api.casts, pages(urls))
 			}
+			fmt.Printf("Casting: %s\n", sel.Title)
 			return cast.Run(ctx, api.casts, to, pages(urls), lines)
 		},
 		Commands: []*cli.Command{
@@ -116,7 +117,7 @@ func castSource(ctx context.Context, cmd *cli.Command, local Local, source func(
 	if err != nil {
 		return err
 	}
-	api, lines, release, err := dial(ctx, cmd, cfg, local)
+	api, lines, release, err := dial(ctx, cmd, cfg.API, local)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func scanCommand(local Local) *cli.Command {
 			if err != nil {
 				return err
 			}
-			api, _, release, err := dial(ctx, cmd, &Config{API: cfg.API}, local)
+			api, _, release, err := dial(ctx, cmd, cfg.API, local)
 			if err != nil {
 				return err
 			}

@@ -1,6 +1,8 @@
 package browse
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -21,5 +23,18 @@ func TestAPinnedDeviceIsCastToWithoutPicking(t *testing.T) {
 	}
 	if name != "http://10.0.0.9:9197/dmr" || typ != "dlna" {
 		t.Errorf("badged %q %q, want the pinned device's host and type", name, typ)
+	}
+}
+
+// A nil device client would panic if a dry run listed or picked devices.
+func TestADryRunBrowsesTitlesWithoutPickingADevice(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	to, _, chosen, err := Run(ctx, nil, shelf{}, cast.Device{}, true)
+	if to != nil || chosen {
+		t.Fatalf("a dry run chose %v %v", to, chosen)
+	}
+	if err != nil && strings.Contains(err.Error(), "picking device") {
+		t.Fatalf("a dry run picked a device: %v", err)
 	}
 }

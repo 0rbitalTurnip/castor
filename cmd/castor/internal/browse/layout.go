@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Horizontal spacing: the inset of every row, and the gap between the results and the inspector.
@@ -18,19 +19,7 @@ func headerPad(s string) string {
 }
 
 // truncate fits s in width cells, ending it with an ellipsis when cut.
-func truncate(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= width {
-		return s
-	}
-	if width == 1 {
-		return "…"
-	}
-	return string(r[:width-1]) + "…"
-}
+func truncate(s string, width int) string { return ansi.Truncate(s, width, "…") }
 
 func blankRect(w, h int) string {
 	if w <= 0 || h <= 0 {
@@ -48,7 +37,6 @@ func clampRows(s string, n int) string {
 	if len(lines) > n {
 		lines = lines[:n]
 	}
-	// n-len(lines) cannot go negative: the truncation above leaves at most n lines.
 	lines = append(lines, make([]string, n-len(lines))...)
 	return strings.Join(lines, "\n")
 }

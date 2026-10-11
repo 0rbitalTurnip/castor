@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// Palette is the colour set one terminal background gets.
 type Palette struct {
 	Dark        bool
 	Accent      color.Color

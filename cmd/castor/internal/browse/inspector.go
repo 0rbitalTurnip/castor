@@ -14,7 +14,7 @@ import (
 	"github.com/stupside/castor/cmd/castor/internal/browse/tmdb"
 )
 
-// Poster: 27×40 cells approximate 2:3 movie ratio (prevents pixterm horizontal stretch).
+// Poster cells approximate the 2:3 movie ratio (half-blocks double the rows).
 const (
 	posterCols = 27
 	posterRows = 20
@@ -29,8 +29,8 @@ type inspector struct {
 	client Catalog
 	styles styles
 
-	posters       map[string]string        // posterPath -> rendered ANSI
-	details       map[string]*tmdb.Details // detailKey -> details
+	posters       map[string]string        // posterPath -> rendered ANSI, empty once a fetch failed
+	details       map[string]*tmdb.Details // detailKey -> details, nil once a fetch failed
 	posterPending string
 	detailPending map[string]bool
 	tok           int // debounce token; only the latest hover settles
@@ -61,24 +61,20 @@ func (in *inspector) update(msg tea.Msg, sel *tmdb.SearchResult) tea.Cmd {
 		}
 		return in.load(*sel)
 	case posterReadyMsg:
-		if msg.err == nil && msg.ansi != "" {
-			in.posters[msg.posterPath] = msg.ansi
-		}
+		in.posters[msg.posterPath] = msg.ansi
 		if msg.posterPath == in.posterPending {
 			in.posterPending = ""
 		}
 		return nil
 	case detailsReadyMsg:
 		delete(in.detailPending, msg.key)
-		if msg.err == nil {
-			in.details[msg.key] = msg.d
-		}
+		in.details[msg.key] = msg.d
 		return nil
 	}
 	return nil
 }
 
-// load is deduped against both the cache and in-flight requests.
+// load skips what is cached, failed or in flight.
 func (in *inspector) load(r tmdb.SearchResult) tea.Cmd {
 	return tea.Batch(in.loadPoster(r), in.loadDetails(r))
 }
@@ -114,7 +110,7 @@ func (in inspector) view(sel *tmdb.SearchResult, height int) string {
 	r := *sel
 
 	poster := blankRect(posterCols, posterRows)
-	if ansi, ok := in.posters[r.PosterPath]; ok && r.PosterPath != "" {
+	if ansi := in.posters[r.PosterPath]; ansi != "" {
 		poster = ansi
 	}
 

@@ -2,9 +2,6 @@
 package tmdb
 
 import (
-	"bufio"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -88,19 +85,7 @@ func (c *Client) get(ctx context.Context, path string, extra url.Values, out any
 	}
 	defer func() { _ = rc.Close() }()
 
-	// Detect gzip by content; TMDB CDN returns gzip without Content-Encoding header.
-	br := bufio.NewReader(rc)
-	var body io.Reader = br
-	if peek, _ := br.Peek(2); bytes.HasPrefix(peek, []byte{0x1f, 0x8b}) {
-		gz, err := gzip.NewReader(br)
-		if err != nil {
-			return fmt.Errorf("tmdb: gunzip %s: %w", path, err)
-		}
-		defer func() { _ = gz.Close() }()
-		body = gz
-	}
-
-	if err := json.UnmarshalRead(body, out); err != nil {
+	if err := json.UnmarshalRead(rc, out); err != nil {
 		return fmt.Errorf("tmdb: decode %s: %w", path, err)
 	}
 	return nil

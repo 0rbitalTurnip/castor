@@ -98,21 +98,30 @@ func (m *model) onDiscoverDone(msg discoverDoneMsg) tea.Cmd {
 	if msg.tok != m.disc.tok {
 		return nil // stale: filters changed while this was in flight
 	}
-	m.loading = false
+	searching := m.query.Value() != "" // the rows and status then belong to the search
+	if !searching {
+		m.loading = false
+	}
 	m.disc.loadingMore = false
 	if msg.err != nil {
-		m.err = msg.err
+		if !searching {
+			m.err = msg.err
+		}
 		return nil
 	}
 	m.disc.page = msg.page
 	m.disc.hasMore = msg.page < msg.totalPages
 	if msg.page <= 1 {
 		m.disc.results = msg.res
-		m.results.SetItems(toResultItems(msg.res))
-		m.results.Select(0)
 	} else {
 		m.disc.results = append(m.disc.results, msg.res...)
-		m.results.SetItems(toResultItems(m.disc.results))
+	}
+	if searching {
+		return nil // applyMode shows them when the query clears
+	}
+	m.results.SetItems(toResultItems(m.disc.results))
+	if msg.page <= 1 {
+		m.results.Select(0)
 	}
 	return m.inspector.hover()
 }

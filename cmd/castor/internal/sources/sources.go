@@ -9,7 +9,7 @@ import (
 // site is a set of proxy hosts and the URL templates to reach a movie or episode page.
 type site struct {
 	Proxies   []string  `yaml:"proxies" validate:"required,min=1"`
-	Templates templates `yaml:"templates" validate:"required"`
+	Templates templates `yaml:"templates"`
 }
 
 type templates struct {

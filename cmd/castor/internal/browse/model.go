@@ -132,6 +132,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
+		if !m.spinning() {
+			return m, nil // restarted by whatever loads next
+		}
 		return m, cmd
 
 	case tea.KeyPressMsg:
@@ -220,6 +223,9 @@ func (m model) updateBrowse(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(km, m.keys.genres):
 		m.genres.open(m.w, m.h)
+		if !m.genres.loaded {
+			return m, m.spin.Tick
+		}
 		return m, nil
 	case key.Matches(km, m.keys.sort):
 		if m.mode == modeDiscover {
@@ -288,6 +294,9 @@ func (m model) updateDrilldown(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, out.cmd
 }
+
+// spinning is whether anything on screen shows the spinner.
+func (m model) spinning() bool { return m.loading || (m.genres.shown && !m.genres.loaded) }
 
 func (m model) drilldownFiltering() bool {
 	return m.scr == screenDrilldown && m.drill.list.SettingFilter()

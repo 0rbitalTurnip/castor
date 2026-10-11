@@ -20,12 +20,24 @@ import (
 // genrePicker is the modal genre filter; owns draft selection, isolated from feed.
 type genrePicker struct {
 	list     list.Model
+	keys     genreKeys
 	styles   styles
 	catalog  tmdb.GenreCatalog
 	loaded   bool
 	media    tmdb.Media
 	selected map[int]struct{} // genre ids chosen for the current media
 	shown    bool
+}
+
+// genreKeys are the bindings only the genre overlay answers to.
+type genreKeys struct{ space, clear, media key.Binding }
+
+func defaultGenreKeys() genreKeys {
+	return genreKeys{
+		space: key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle")),
+		clear: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear")),
+		media: key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "movie/tv")),
+	}
 }
 
 // genreAction is the result of a key press to the picker.
@@ -49,6 +61,7 @@ func newGenrePicker() genrePicker {
 
 	return genrePicker{
 		list:     l,
+		keys:     defaultGenreKeys(),
 		media:    tmdb.MediaMovie,
 		selected: map[int]struct{}{},
 	}
@@ -92,7 +105,7 @@ func (g *genrePicker) update(msg tea.KeyPressMsg, keys keyMap, w, h int) (tea.Cm
 	case key.Matches(msg, keys.enter):
 		g.shown = false
 		return nil, genreApplied
-	case key.Matches(msg, keys.space):
+	case key.Matches(msg, g.keys.space):
 		if it, ok := g.list.SelectedItem().(genreItem); ok {
 			if _, on := g.selected[it.g.ID]; on {
 				delete(g.selected, it.g.ID)
@@ -102,11 +115,11 @@ func (g *genrePicker) update(msg tea.KeyPressMsg, keys keyMap, w, h int) (tea.Cm
 			g.reload()
 		}
 		return nil, genreIdle
-	case key.Matches(msg, keys.clearGenres):
+	case key.Matches(msg, g.keys.clear):
 		clear(g.selected)
 		g.reload()
 		return nil, genreIdle
-	case key.Matches(msg, keys.overlayMedia):
+	case key.Matches(msg, g.keys.media):
 		g.toggleMedia(w, h)
 		return nil, genreIdle
 	}
@@ -185,7 +198,7 @@ func (g genrePicker) view(spin spinner.Model, hints help.Model, keys keyMap, w, 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		title, "", body, "",
 		g.styles.muted.Render(count),
-		hints.ShortHelpView([]key.Binding{keys.space, apply, keys.overlayMedia, keys.clearGenres, cancel}),
+		hints.ShortHelpView([]key.Binding{g.keys.space, apply, g.keys.media, g.keys.clear, cancel}),
 	)
 	box := g.styles.box.Render(content)
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)

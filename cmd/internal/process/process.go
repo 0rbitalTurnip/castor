@@ -31,12 +31,7 @@ func Debug(cmd *cli.Command) bool { return cmd.Bool(debugFlag) }
 
 // Run runs root until it returns or the process is interrupted, exiting non-zero on its error.
 func Run(root *cli.Command) {
-	l, err := logger(log.InfoLevel)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "castor:", err)
-		os.Exit(1)
-	}
-	slog.SetDefault(l)
+	slog.SetDefault(logger(log.InfoLevel))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -47,11 +42,7 @@ func Run(root *cli.Command) {
 	root.Flags = append(root.Flags, Flags...)
 	root.Before = func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 		if Debug(cmd) {
-			l, err := logger(log.DebugLevel)
-			if err != nil {
-				return ctx, err
-			}
-			slog.SetDefault(l)
+			slog.SetDefault(logger(log.DebugLevel))
 		}
 		return ctx, nil
 	}
@@ -91,33 +82,36 @@ func info() *cli.Command {
 	}
 }
 
-// file is where every castor process also writes its log lines, kept open for the process's life.
-var file = sync.OnceValues(func() (*os.File, error) {
-	dir, err := os.UserCacheDir()
+// file is where every castor process also writes its log lines, kept open for the process's life; nil when it cannot be opened.
+var file = sync.OnceValue(func() *os.File {
+	open := func() (*os.File, error) {
+		dir, err := os.UserCacheDir()
+		if err != nil {
+			return nil, err
+		}
+		dir = filepath.Join(dir, "castor")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, err
+		}
+		return os.OpenFile(filepath.Join(dir, "castor.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	}
+	f, err := open()
 	if err != nil {
-		return nil, fmt.Errorf("locating the log directory: %w", err)
+		fmt.Fprintln(os.Stderr, "castor: not writing a log file:", err)
 	}
-	dir = filepath.Join(dir, "castor")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("creating the log directory: %w", err)
-	}
-	f, err := os.OpenFile(filepath.Join(dir, "castor.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("opening the log file: %w", err)
-	}
-	return f, nil
+	return f
 })
 
-func logger(level log.Level) (*slog.Logger, error) {
+func logger(level log.Level) *slog.Logger {
 	screen := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      "15:04:05.000",
 		Level:           level,
 	})
-	f, err := file()
-	if err != nil {
-		return nil, err
+	f := file()
+	if f == nil {
+		return slog.New(screen)
 	}
 	text := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.Level(level)})
-	return slog.New(slog.NewMultiHandler(screen, text)), nil
+	return slog.New(slog.NewMultiHandler(screen, text))
 }

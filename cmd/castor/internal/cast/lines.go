@@ -1,7 +1,9 @@
 package cast
 
 import (
+	"context"
 	"log/slog"
+	"slices"
 	"time"
 
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
@@ -27,10 +29,26 @@ func (l Lines) level() *castorv1.LogLevel {
 	return nil
 }
 
-// FromServer marks the lines a server wrote, apart from the command's own.
-func FromServer(h slog.Handler) slog.Handler {
-	return h.WithAttrs([]slog.Attr{slog.String("from", "server")})
+// FromServer marks the lines a server wrote, apart from the command's own, writing them through the default logger as it is when each arrives.
+func FromServer() slog.Handler { return server{} }
+
+type server struct{ attrs []slog.Attr }
+
+func (server) Enabled(ctx context.Context, l slog.Level) bool {
+	return slog.Default().Handler().Enabled(ctx, l)
 }
+
+func (s server) Handle(ctx context.Context, r slog.Record) error {
+	marked := append([]slog.Attr{slog.String("from", "server")}, s.attrs...)
+	return slog.Default().Handler().WithAttrs(marked).Handle(ctx, r)
+}
+
+func (s server) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return server{attrs: slices.Concat(s.attrs, attrs)}
+}
+
+// WithGroup is unused by castor's servers; lines keep their keys flat.
+func (s server) WithGroup(string) slog.Handler { return s }
 
 // record is a cast's line, re-logged here as it arrived.
 func record(l *castorv1.LogLine) slog.Record {

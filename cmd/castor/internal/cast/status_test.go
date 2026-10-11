@@ -91,7 +91,7 @@ func TestTypedTerminalResults(t *testing.T) {
 		{"failed", &castorv1.Ended{Result: &castorv1.Ended_Failed{Failed: &castorv1.Failure{Code: castorv1.FailureCode_FAILURE_CODE_PLAYBACK_FAILED, Message: "stalled"}}}, errors.New("stalled")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := outcome(tc.ended, nil)
+			got := outcome(tc.ended)
 			if tc.want == nil {
 				if got != nil {
 					t.Errorf("outcome = %v, want success", got)
@@ -100,10 +100,6 @@ func TestTypedTerminalResults(t *testing.T) {
 				t.Errorf("outcome = %v, want %v", got, tc.want)
 			}
 		})
-	}
-	transport := errors.New("watch disconnected")
-	if got := outcome(nil, transport); !errors.Is(got, transport) {
-		t.Errorf("outcome = %v, want watch error", got)
 	}
 }
 

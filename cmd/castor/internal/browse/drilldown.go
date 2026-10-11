@@ -32,7 +32,7 @@ type drilldown struct {
 	tvID         int
 	tvName       string
 	seasonNum    int
-	seasonsCache []list.Item // restore target for episodes → seasons back
+	seasonsCache []list.Item
 }
 
 func newDrilldown(ctx context.Context, client Catalog) drilldown {
@@ -41,6 +41,7 @@ func newDrilldown(ctx context.Context, client Catalog) drilldown {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
+	l.DisableQuitKeybindings() // "q" must not leave the program mid-filter or mid-browse
 	return drilldown{ctx: ctx, client: client, list: l}
 }
 

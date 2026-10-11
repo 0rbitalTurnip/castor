@@ -12,32 +12,26 @@ type keyMap struct {
 	genres           key.Binding
 	sort             key.Binding
 	media            key.Binding
-	space            key.Binding
-	clearGenres      key.Binding
-	overlayMedia     key.Binding
 	help             key.Binding
 	quit             key.Binding
 }
 
 func defaultKeys() keyMap {
 	return keyMap{
-		up:           key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up")),
-		down:         key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),
-		pageUp:       key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
-		pageDown:     key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down")),
-		tab:          key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next")),
-		shiftTab:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev")),
-		enter:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "open")),
-		back:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		genres:       key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("^g", "genres")),
-		sort:         key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("^s", "sort")),
-		media:        key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "movie/tv")),
-		space:        key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle")),
-		clearGenres:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear")),
-		overlayMedia: key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "movie/tv")),
-		help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		quit:         key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("^C", "quit")),
+		up:       key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up")),
+		down:     key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),
+		pageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
+		pageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down")),
+		tab:      key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next")),
+		shiftTab: key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev")),
+		enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "open")),
+		back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		filter:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		genres:   key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("^g", "genres")),
+		sort:     key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("^s", "sort")),
+		media:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("^t", "movie/tv")),
+		help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		quit:     key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("^C", "quit")),
 	}
 }
 

@@ -21,19 +21,19 @@ type clients struct {
 	devices castorv1connect.DeviceServiceClient
 }
 
-// dial reaches the API cfg names, or the one local runs, and settles which of a cast's lines to show; release stops what local runs.
-func dial(ctx context.Context, cmd *cli.Command, cfg *Config, local Local) (_ clients, lines cast.Lines, release func(), err error) {
+// dial reaches the API api names, or the one local runs, and settles which of a cast's lines to show; release stops what local runs.
+func dial(ctx context.Context, cmd *cli.Command, api apiConfig, local Local) (_ clients, lines cast.Lines, release func(), err error) {
 	debug := process.Debug(cmd)
 	lines = cast.LinesWarn
 	if debug {
 		lines = cast.LinesDebug
 	}
-	at, release := transport.Endpoint{URL: cfg.API.URL, Token: cfg.API.Token}, func() {}
+	at, release := transport.Endpoint{URL: api.URL, Token: api.Token}, func() {}
 	if at.URL == "" {
 		// The servers' own lines are written here only under --debug; a cast's warnings come through its watch.
 		server := slog.DiscardHandler
 		if debug {
-			server = cast.FromServer(slog.Default().Handler())
+			server = cast.FromServer()
 		}
 		var written bool
 		if at, written, release, err = local(ctx, cmd, server); err != nil {
