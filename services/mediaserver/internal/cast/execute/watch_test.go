@@ -53,12 +53,10 @@ func TestWaitForPlayableHoldsUntilTheTranscriptionLeads(t *testing.T) {
 
 // stoppedDevice took nothing, last asked at last.
 type stoppedDevice struct {
-	last     time.Time
-	buffered time.Duration
+	last time.Time
 }
 
 func (s stoppedDevice) Handed() (int64, time.Time) { return 0, s.last }
-func (s stoppedDevice) Buffered() time.Duration    { return s.buffered }
 
 // gateFixture is a buffered read over an empty spool, granted pace.
 func gateFixture(t *testing.T, pace float64) *buffered {

@@ -14,6 +14,9 @@ const BackoffMax = 60 * time.Second
 // EncodeBurst is how much media a subtitle-burning encode reads ahead at wire speed.
 const EncodeBurst = 10 * time.Second
 
+// Window is how far ahead of playback a read of a finite program keeps.
+const Window = 90 * time.Second
+
 // Pace is how fast a read may consume its source.
 type Pace struct {
 	// Realtime is the media seconds per wall-clock second the read is allowed.
@@ -41,9 +44,10 @@ func (p Pace) capped(ceiling Pace) Pace {
 }
 
 var (
-	paceVOD = Pace{Realtime: 2.0, Burst: 90 * time.Second}
+	// A VOD read fills a window ahead of playback at wire speed, then keeps pace, so an origin serving on demand is never asked for the whole film.
+	paceVOD = Pace{Realtime: 1.0, Burst: Window, Catchup: 2.0}
 	// A live read held to 1x never wins back what a stalled segment cost it, and falls off the window.
-	paceLive = Pace{Realtime: 1.0, Catchup: paceVOD.Realtime}
+	paceLive = Pace{Realtime: 1.0, Catchup: paceVOD.Catchup}
 	// pacePlayback asks for a link at the rate it is played, with no burst.
 	pacePlayback = Pace{Realtime: 1.0}
 )

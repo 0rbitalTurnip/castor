@@ -41,6 +41,12 @@ const (
 	ready
 	// healthy is a cast in flight with nothing against it.
 	healthy
+	// Lean is a device about to outrun its read, which the watch holds.
+	Lean
+	// Replenished is a held device whose read is ahead again, which the watch lets go.
+	Replenished
+	// Undeliverable is a read under playback pace for the whole deliver budget.
+	Undeliverable
 	// Stalled is a producer silent for the stall window.
 	Stalled
 	// Starved is a device that took all the read had made, which was not all of the program.
@@ -57,6 +63,12 @@ func (k Kind) String() string {
 		return "ready"
 	case healthy:
 		return "healthy"
+	case Lean:
+		return "lean"
+	case Replenished:
+		return "replenished"
+	case Undeliverable:
+		return "undeliverable"
 	case Stalled:
 		return "stalled"
 	case Starved:
@@ -81,6 +93,9 @@ const (
 	revise
 	// abandon ends the cast with the verdict's reasoning and the measurements behind it.
 	abandon
+	// hold pauses the device; release lets it play again.
+	hold
+	release
 )
 
 // verdict is the pair the action table is keyed on: what was judged, and in which phase.
@@ -89,7 +104,7 @@ type verdict struct {
 	phase Phase
 }
 
-// actions is what each verdict asks for in each phase; no verdict while playing revises, which would restart the cast under a viewer.
+// actions is what each verdict asks for in each phase; no verdict while playing revises, which would restart the cast under a viewer, so a device is held instead.
 var actions = map[verdict]action{
 	{kind: starting, phase: Reading}: keepWatching,
 	{kind: starting, phase: Opening}: keepWatching,
@@ -98,11 +113,15 @@ var actions = map[verdict]action{
 	{kind: ready, phase: Reading}: open,
 	{kind: ready, phase: Opening}: open,
 
-	{kind: Dead, phase: Reading}:    revise,
-	{kind: Dead, phase: Opening}:    revise,
-	{kind: Stalled, phase: Reading}: revise,
-	{kind: Stalled, phase: Opening}: revise,
+	{kind: Dead, phase: Reading}:          revise,
+	{kind: Dead, phase: Opening}:          revise,
+	{kind: Undeliverable, phase: Reading}: revise,
+	{kind: Stalled, phase: Opening}:       revise,
+
+	{kind: Lean, phase: Playing}:        hold,
+	{kind: Replenished, phase: Playing}: release,
 
 	{kind: Stalled, phase: Playing}:   abandon,
+	{kind: Starved, phase: Playing}:   abandon,
 	{kind: Unfetched, phase: Playing}: abandon,
 }

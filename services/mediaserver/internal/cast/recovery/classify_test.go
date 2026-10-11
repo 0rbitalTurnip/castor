@@ -23,6 +23,8 @@ func TestClassify(t *testing.T) {
 		{"a reader exit on copied packets broke upstream", Evidence{Reached: health.Reading, Verdict: health.Dead, ReadExit: 183, Copied: media.Axes{Video: true}, Vitals: health.Vitals{Landed: 4 << 20, Samples: 12}}, copyBrokeUpstream},
 		{"a reader castor killed is a stall, not a broken copy", Evidence{Reached: health.Reading, Verdict: health.Stalled, ReadExit: -1, Copied: media.Axes{Video: true}, Vitals: health.Vitals{Landed: 4 << 20}}, sourceStalled},
 		{"a device that ran dry mid-film is starved, and never re-read", Evidence{Reached: health.Playing, Verdict: health.Starved}, starved},
+		{"a read under playback pace that landed media is too slow", Evidence{Reached: health.Reading, Verdict: health.Undeliverable, Vitals: health.Vitals{Landed: 4 << 20, Samples: 12}}, tooSlow},
+		{"a read under playback pace that landed nothing is unreachable", Evidence{Reached: health.Reading, Verdict: health.Undeliverable}, unreachable},
 		{"a clean read that lost media before play is re-read", Evidence{Reached: health.Reading, ReadIncomplete: true, Copied: media.Axes{Video: true}}, sourceStalled},
 		{"a read that lost media after the hand-off is not re-read", Evidence{Reached: health.Playing, ReadIncomplete: true}, unclassified},
 		{"a device that stopped answering is gone", Evidence{Reached: health.Playing, DeviceGone: gone}, deviceGone},
@@ -38,5 +40,26 @@ func TestClassify(t *testing.T) {
 				t.Errorf("classified %s, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+// A fault quotes what the reader complained about, not whatever it chattered last.
+func TestTheFaultQuotesTheReadersComplaintsBeforeItsChatter(t *testing.T) {
+	lines := []string{
+		"[verbose] Opening 'seg_23.ts' for reading",
+		"[error] Error reading HTTP response: Operation timed out",
+		"[warning] Failed to open segment 24 of playlist 0",
+		"[verbose] Opening 'seg_24.ts' for reading",
+		"[verbose] Starting connection attempt",
+		"[verbose] Successfully connected",
+		"[verbose] HLS request for url 'seg_24.ts'",
+	}
+	got := tells(lines)
+	if len(got) != 2 || got[0] != lines[1] || got[1] != lines[2] {
+		t.Errorf("tells = %q, want the error and the warning alone", got)
+	}
+	chatter := lines[3:]
+	if got := tells(chatter); len(got) != 4 || got[0] != chatter[len(chatter)-4] {
+		t.Errorf("tells over chatter alone = %q, want its last four lines", got)
 	}
 }

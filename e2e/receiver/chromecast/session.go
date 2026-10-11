@@ -21,6 +21,8 @@ type castSession struct {
 	cors     CORS
 	wmu      sync.Mutex
 	launched bool
+	// content is what the last LOAD played, which PAUSE and PLAY report on.
+	content string
 }
 
 // request is the part of any sender payload the receiver dispatches on.
@@ -31,6 +33,7 @@ type request struct {
 		ContentID   string `json:"contentId"`
 		ContentType string `json:"contentType"`
 	} `json:"media"`
+	MediaSessionID int `json:"mediaSessionId"`
 }
 
 // handlers answer each namespace#type a sender sends; the reply goes back under the request's id.
@@ -50,11 +53,30 @@ func (c *castSession) handlers() map[string]func(msg *pb.CastMessage, req reques
 				c.send(mediaTransportID, sender, nsMedia, mediaStatus(content, "IDLE", "ERROR"))
 				return map[string]any{"type": "LOAD_FAILED"}
 			}
+			c.content = content
 			c.session.Hand(content, req.Media.ContentType)
 			c.session.Go(func() { c.report(sender, content) })
 			return mediaStatus(content, "BUFFERING", "")
 		},
+		nsMedia + "#PAUSE": func(_ *pb.CastMessage, req request) map[string]any { return c.transport(req, true) },
+		nsMedia + "#PLAY":  func(_ *pb.CastMessage, req request) map[string]any { return c.transport(req, false) },
 	}
+}
+
+// transport pauses or resumes the media session, answering with the state it is now in.
+func (c *castSession) transport(req request, hold bool) map[string]any {
+	if req.MediaSessionID != mediaSessionID {
+		c.session.Problem("%s on media session %d, want %d", req.Type, req.MediaSessionID, mediaSessionID)
+	}
+	if c.session.State() != receiver.Playing {
+		c.session.Problem("%s while not playing", req.Type)
+		return mediaStatus(c.content, "IDLE", idleReasons[c.session.State()])
+	}
+	c.session.Hold(hold)
+	if hold {
+		return mediaStatus(c.content, "PAUSED", "")
+	}
+	return mediaStatus(c.content, "PLAYING", "")
 }
 
 func (c *castSession) serve() {

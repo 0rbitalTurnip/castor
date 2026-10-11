@@ -1,11 +1,11 @@
-# fMP4 segments that go quiet with a viewer watching end the cast, rather than pointing the TV somewhere else mid-title.
+# fMP4 segments that go quiet for good with a viewer watching: the device is held while castor waits for the origin, then the cast ends rather than pointing the device somewhere else mid-title.
 stream:
   packaging: hls-fmp4
   video: {codec: h264, height: 360}
   audio: {codec: aac, channels: 2}
   seconds: 60
 origin:
-  stalls-at: 10
+  stalls-at: 40
 receiver:
   device:
     dlna:

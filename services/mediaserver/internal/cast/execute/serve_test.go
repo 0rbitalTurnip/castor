@@ -77,7 +77,7 @@ func (r observedDevice) AwaitEnd(ctx context.Context) error         { return r.w
 
 func TestAPlayingRemuxIsWatchedOverItsEncoder(t *testing.T) {
 	p := took(t, blocking)
-	p.mech.audience = stoppedDevice{last: time.Now().Add(-health.StallWindow - time.Second), buffered: 20 * time.Minute}
+	p.mech.audience = stoppedDevice{last: time.Now().Add(-health.StallWindow - time.Second)}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -404,3 +404,9 @@ func programSourceWithin(t *testing.T, sourceURL *url.URL, contentType string, r
 	}
 	return source
 }
+
+func (observedDevice) Pause(context.Context) error  { return nil }
+func (observedDevice) Resume(context.Context) error { return nil }
+
+func (probingDevice) Pause(context.Context) error  { return nil }
+func (probingDevice) Resume(context.Context) error { return nil }

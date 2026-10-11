@@ -16,12 +16,18 @@ type Vitals struct {
 	// sinceGrowth is how long no new media has arrived: Position when the producer states one, else Landed.
 	sinceGrowth time.Duration
 
-	// Position is the media made so far, and Speed that media per wall-clock second.
+	// Position is the media made so far, and Speed that media per wall-clock second since the producer started.
 	Position time.Duration
 	Speed    media.Speed
 
 	// Samples counts the speeds the producer stated, none before its first packet.
 	Samples int
+
+	// rate is media made per wall-clock second over the last rateSpan, which is what the producer delivers now.
+	rate float64
+
+	// sinceDeficit is how long the rate has been under playback.
+	sinceDeficit time.Duration
 
 	// ended is a producer that finished, which never stalls since its buffer will not grow again.
 	ended  bool
@@ -39,26 +45,30 @@ type Vitals struct {
 	handed     int64
 	sinceFetch time.Duration
 
-	// delivered is the media the device can fetch, and sincePlay how long it has held the URL.
-	delivered time.Duration
-	sincePlay time.Duration
+	// played is the media the device has played since it was handed the URL, less the time it was held.
+	played time.Duration
+
+	// holdable is a device the watch may pause; paused is one it holds, for sincePause.
+	holdable   bool
+	paused     bool
+	sincePause time.Duration
 }
 
 func (h Vitals) String() string {
-	return fmt.Sprintf("landed=%d position=%s speed=%.4gx samples=%d since_growth=%s handed=%d since_fetch=%s buffered=%s",
-		h.Landed, h.Position.Round(time.Second), float64(h.Speed),
+	return fmt.Sprintf("landed=%d position=%s rate=%.3gx speed=%.4gx samples=%d since_growth=%s handed=%d since_fetch=%s ahead=%s paused=%t",
+		h.Landed, h.Position.Round(time.Second), h.rate, float64(h.Speed),
 		h.Samples, h.sinceGrowth.Round(time.Second), h.handed, h.sinceFetch.Round(time.Second),
-		h.buffer().Round(time.Second))
+		h.ahead().Round(time.Second), h.paused)
 }
 
 // playable reports that there is something to hand a device.
 func (h Vitals) playable() bool { return h.Landed > 0 }
 
-// buffer is the least media the device provably still has to play.
-func (h Vitals) buffer() time.Duration { return h.delivered - h.sincePlay }
+// ahead is the least media the device provably still has to play: what was made, less what it has played.
+func (h Vitals) ahead() time.Duration { return h.Position - h.played }
 
-// buffered tells a device still playing from one that ran out.
-func (h Vitals) buffered() bool { return h.buffer() > 0 }
+// paced is a producer delivering at least as fast as playback consumes.
+func (h Vitals) paced() bool { return h.rate >= playbackRate }
 
 // leads is a transcription far enough ahead, or finished.
 func (h Vitals) leads() bool { return h.lead >= transcriptionLead.Seconds() || h.leadDone }
@@ -67,8 +77,21 @@ func (h Vitals) leads() bool { return h.lead >= transcriptionLead.Seconds() || h
 func (h Vitals) cushioned() bool { return h.Position >= readCushion }
 
 const (
+	// playbackRate is the pace a device plays at.
+	playbackRate = 1.0
+
 	// readCushion is the media a read holds before a device is started, since a device gives up on a stall long before one is judged.
 	readCushion = 30 * time.Second
+
+	// deliverBudget is how long a read may deliver under playback before the gate gives the link up.
+	deliverBudget = fetch.BackoffMax
+
+	// lowWater is the media left to a device under which the watch holds it; highWater is where it lets it go again.
+	lowWater  = 10 * time.Second
+	highWater = readCushion
+
+	// pauseBudget is how long a device is held for a read to get ahead again before the cast is given up.
+	pauseBudget = 2 * fetch.BackoffMax
 
 	// transcriptionLead is how far a burn-in leads before playback starts.
 	transcriptionLead = fetch.EncodeBurst + 10*time.Second
@@ -79,9 +102,11 @@ const (
 	// fetchWindow is one reconnect ceiling: a device on the local network needs no longer.
 	fetchWindow = fetch.BackoffMax
 
-	// paceSpan is how far back growth is judged, and minPace the share of playback that counts as growing.
-	paceSpan = 10 * time.Second
-	minPace  = 0.5
+	// rateSpan is how far back the rate is measured: three segments of the longest common target duration.
+	rateSpan = 30 * time.Second
+
+	// minPace is the share of playback under which a producer counts as not growing.
+	minPace = 0.5
 
 	// pollInterval is under the producer's report period, so no sample is missed.
 	pollInterval = 200 * time.Millisecond

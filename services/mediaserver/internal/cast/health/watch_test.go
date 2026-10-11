@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -112,3 +113,139 @@ func (p *pacedProducer) Progress() media.Progress {
 func (p *pacedProducer) Done() <-chan struct{} { return p.done }
 func (p *pacedProducer) Err() error            { return nil }
 func (p *pacedProducer) Evidence() []string    { return nil }
+
+// A read under playback pace is given up before any device is pointed at it, however much it has landed.
+func TestAReadUnderPlaybackPaceIsUndeliverable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := &pacedProducer{done: make(chan struct{}), start: time.Now(), made: func(d time.Duration) time.Duration { return d * 7 / 10 }}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+		defer cancel()
+		err := Watch(ctx, Monitor{Subject: "playback gate", Phase: Reading, Producer: producer, Telemetry: producer, Landed: func() int64 { return 1 << 20 }})
+		fault, ok := errors.AsType[*Fault](err)
+		if !ok || fault.Kind != Undeliverable || !fault.Revise {
+			t.Fatalf("Watch = %v, want a revisable undeliverable verdict against a 0.7x read", err)
+		}
+		if waited := time.Since(producer.start); waited > deliverBudget+time.Second {
+			t.Errorf("the gate waited %v on a read that never kept pace, want about the deliver budget", waited)
+		}
+	})
+}
+
+// A read at playback pace opens the gate once the cushion is landed.
+func TestAReadKeepingPaceOpensOnItsCushion(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := &pacedProducer{done: make(chan struct{}), start: time.Now(), made: func(d time.Duration) time.Duration { return d * 12 / 10 }}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+		defer cancel()
+		if err := Watch(ctx, Monitor{Subject: "playback gate", Phase: Reading, Producer: producer, Telemetry: producer, Landed: func() int64 { return 1 << 20 }}); err != nil {
+			t.Fatalf("Watch = %v, want the gate open", err)
+		}
+		if waited := time.Since(producer.start); waited > readCushion+time.Second {
+			t.Errorf("the gate waited %v, want it open as soon as the cushion landed", waited)
+		}
+	})
+}
+
+// heldDevice records every hold and release, and takes bytes the moment it is asked.
+type heldDevice struct {
+	mu       sync.Mutex
+	holds    []time.Time
+	releases []time.Time
+	refuse   error
+}
+
+func (d *heldDevice) Handed() (int64, time.Time) { return 1 << 20, time.Now() }
+func (d *heldDevice) Pause(context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.refuse != nil {
+		return d.refuse
+	}
+	d.holds = append(d.holds, time.Now())
+	return nil
+}
+func (d *heldDevice) Resume(context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.releases = append(d.releases, time.Now())
+	return nil
+}
+
+// A read that falls behind a playing device has the device held, and released once it is the cushion ahead again.
+func TestADeviceOutrunningItsReadIsHeldThenReleased(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		// Ahead by the cushion for a minute, then frozen for a minute, then racing ahead again.
+		producer := &pacedProducer{done: make(chan struct{}), start: start, made: func(d time.Duration) time.Duration {
+			switch {
+			case d < time.Minute:
+				return d + readCushion
+			case d < 2*time.Minute:
+				return time.Minute + readCushion
+			default:
+				return time.Minute + readCushion + 3*(d-2*time.Minute)
+			}
+		}}
+		dev := &heldDevice{}
+		ctx, cancel := context.WithTimeout(t.Context(), 4*time.Minute)
+		defer cancel()
+		go func() {
+			<-ctx.Done()
+			close(producer.done)
+		}()
+		err := Watch(ctx, Monitor{Subject: "the playing cast", Phase: Playing, Producer: producer, Telemetry: producer, Audience: dev, Transport: dev})
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Watch = %v, want it still watching a cast that recovered", err)
+		}
+		dev.mu.Lock()
+		defer dev.mu.Unlock()
+		if len(dev.holds) != 1 || len(dev.releases) != 1 {
+			t.Fatalf("held %d times and released %d, want once each", len(dev.holds), len(dev.releases))
+		}
+		// Frozen from 1:00 with 30s ahead, the device reaches the low-water mark 20s later.
+		if held := dev.holds[0].Sub(start); held < time.Minute+19*time.Second || held > time.Minute+22*time.Second {
+			t.Errorf("held at %v, want about 1m20s when the device came within the low-water mark", held)
+		}
+		// Racing from 2:00 at 3x, the read is the cushion ahead of the device held at 1:20 some 7s later.
+		if released := dev.releases[0].Sub(start); released < 2*time.Minute+6*time.Second || released > 2*time.Minute+8*time.Second {
+			t.Errorf("released at %v, want about 2m07s when the read was the cushion ahead again", released)
+		}
+	})
+}
+
+// A device held for the whole pause budget with the read still behind is starved.
+func TestADeviceHeldPastThePauseBudgetIsStarved(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := &frozenProducer{done: make(chan struct{}), position: 5 * time.Second}
+		dev := &heldDevice{}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+		defer cancel()
+		err := Watch(ctx, Monitor{Subject: "the playing cast", Phase: Playing, Producer: producer, Telemetry: producer, Audience: dev, Transport: dev})
+		fault, ok := errors.AsType[*Fault](err)
+		if !ok || fault.Kind != Starved || fault.Revise {
+			t.Fatalf("Watch = %v, want a starved verdict after the pause budget", err)
+		}
+		if fault.Vitals.Position != 5*time.Second || !fault.Vitals.paused {
+			t.Errorf("the verdict carries %s, want the measurements it was reached on", fault.Vitals)
+		}
+		dev.mu.Lock()
+		defer dev.mu.Unlock()
+		if len(dev.holds) != 1 || len(dev.releases) != 0 {
+			t.Errorf("held %d times and released %d, want held once and never released", len(dev.holds), len(dev.releases))
+		}
+	})
+}
+
+// A device that will not be held is asked once, then judged as one that cannot be held.
+func TestADeviceThatRefusesToPauseIsJudgedUnholdable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := &frozenProducer{done: make(chan struct{}), position: 5 * time.Second}
+		dev := &heldDevice{refuse: errors.New("UPnP 701: transition not available")}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+		defer cancel()
+		err := Watch(ctx, Monitor{Subject: "the playing cast", Phase: Playing, Producer: producer, Telemetry: producer, Audience: dev, Transport: dev})
+		if fault, ok := errors.AsType[*Fault](err); !ok || fault.Kind != Stalled {
+			t.Fatalf("Watch = %v, want a stall once the device played out what the silent read had made", err)
+		}
+	})
+}

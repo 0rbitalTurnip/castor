@@ -301,3 +301,6 @@ func programFromStream(t *testing.T, stream *source.Stream) media.Program {
 	}
 	return program
 }
+
+func (*fakeDevice) Pause(context.Context) error  { return nil }
+func (*fakeDevice) Resume(context.Context) error { return nil }

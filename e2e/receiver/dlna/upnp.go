@@ -33,6 +33,7 @@ var transportStates = map[receiver.Playback]string{
 	receiver.Playing: "PLAYING",
 	receiver.Ended:   "STOPPED",
 	receiver.Stopped: "STOPPED",
+	receiver.Starved: "STOPPED",
 }
 
 func (u *upnp) description(w http.ResponseWriter, _ *http.Request) {
@@ -78,6 +79,10 @@ func (u *upnp) actions() map[string]func(envelope) (string, int) {
 			return "", 0
 		},
 		"Play": func(envelope) (string, int) {
+			if u.session.Held() {
+				u.session.Hold(false)
+				return "", 0
+			}
 			u.mu.Lock()
 			uri, meta := u.uri, u.meta
 			u.mu.Unlock()
@@ -86,6 +91,14 @@ func (u *upnp) actions() map[string]func(envelope) (string, int) {
 				return "", 0
 			}
 			u.fetch(u.session, uri, didlContentType(meta))
+			return "", 0
+		},
+		"Pause": func(envelope) (string, int) {
+			if u.session.State() != receiver.Playing {
+				u.session.Problem("Pause while %s", u.transportState())
+				return "", 0
+			}
+			u.session.Hold(true)
 			return "", 0
 		},
 		"GetTransportInfo": func(envelope) (string, int) {
@@ -130,5 +143,8 @@ func (u *upnp) transportState() string {
 		state = receiver.Playing
 	}
 	u.reportedPlaying = u.reportedPlaying || state == receiver.Playing
+	if state == receiver.Playing && u.session.Held() {
+		return "PAUSED_PLAYBACK"
+	}
 	return transportStates[state]
 }

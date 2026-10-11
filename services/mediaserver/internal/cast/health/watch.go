@@ -13,7 +13,8 @@ import (
 
 // Watch polls one subject until a rule ends the wait: nil to proceed, a *Fault to end.
 func Watch(ctx context.Context, m Monitor) error {
-	t := &tracker{m: m, start: time.Now(), grew: time.Now()}
+	now := time.Now()
+	t := &tracker{m: m, start: now, grew: now, kept: now}
 	tick := time.NewTicker(pollInterval)
 	defer tick.Stop()
 
@@ -30,11 +31,16 @@ func Watch(ctx context.Context, m Monitor) error {
 				"rule", r.name,
 				"waited", time.Since(t.start).Round(time.Millisecond),
 				"landed_bytes", h.Landed,
+				"rate", h.rate,
 				"transcribed_lead_seconds", int(h.lead),
 			)
 			return nil
 		case revise, abandon:
 			return t.fault(ctx, r, act, h)
+		case hold:
+			t.hold(ctx, r, h)
+		case release:
+			t.release(ctx, r, h)
 		default:
 			t.report(ctx, r, h)
 		}
@@ -69,9 +75,14 @@ type Fault struct {
 	Evidence []string
 }
 
-// DeviceStarved is the fault of a device that ended while the read behind it was still running, having taken everything that read had made.
-func DeviceStarved(subject string) *Fault {
-	return &Fault{Kind: Starved, why: "the device ran out of media before the upstream read finished", Subject: subject}
+// DeviceStarved is the fault of a device that ended on its own while the read behind it still ran, having taken everything it had made.
+func DeviceStarved(subject string, made media.Progress, handed int64) *Fault {
+	return &Fault{
+		Kind:    Starved,
+		why:     "the device ran out of media before the upstream read finished",
+		Subject: subject,
+		Vitals:  Vitals{Landed: made.Bytes, Position: made.Position, Speed: made.Speed, handed: handed},
+	}
 }
 
 func (f *Fault) Error() string {
@@ -93,20 +104,30 @@ type tracker struct {
 	landed int64
 	grew   time.Time
 
-	// trail is the media position over the last paceSpan, oldest first.
+	// trail is the media position over the last rateSpan, oldest first.
 	trail []mark
+
+	// kept is when the rate last kept up with playback.
+	kept time.Time
 
 	// samples counts the speeds the producer stated, not the N/A it prints before.
 	sample  media.Progress
 	samples int
 	fresh   bool
 
+	// pausedAt is when the device was last held, zero while it plays; held is every hold before it.
+	pausedAt time.Time
+	held     time.Duration
+	// unholdable is a device that refused to pause, judged from then on as one that cannot be held.
+	unholdable bool
+
 	reported time.Time
 }
 
 // read takes one reading of every port.
 func (t *tracker) read() Vitals {
-	h := Vitals{subtitles: t.m.Lead != nil}
+	now := time.Now()
+	h := Vitals{subtitles: t.m.Lead != nil, holdable: t.m.Transport != nil && !t.unholdable}
 
 	if t.m.Landed != nil {
 		h.Landed = t.m.Landed()
@@ -124,17 +145,22 @@ func (t *tracker) read() Vitals {
 		}
 		t.sample = sample
 		h.Position, h.Speed, h.Samples = sample.Position, sample.Speed, t.samples
+		h.rate = t.pace(now, h.Position)
 	}
+	if h.paced() {
+		t.kept = now
+	}
+	h.sinceDeficit = now.Sub(t.kept)
 
 	// Growth is media at a pace: a muxer pads bytes with no media behind them, and a trickle never goes silent.
 	grew := h.Landed != t.landed
 	if t.m.Telemetry != nil {
-		grew = t.keepsPace(time.Now(), h.Position)
+		grew = h.rate >= minPace
 	}
 	if grew {
-		t.landed, t.grew = h.Landed, time.Now()
+		t.landed, t.grew = h.Landed, now
 	}
-	h.sinceGrowth = time.Since(t.grew)
+	h.sinceGrowth = now.Sub(t.grew)
 
 	if p := t.m.Producer; p != nil {
 		select {
@@ -152,13 +178,21 @@ func (t *tracker) read() Vitals {
 		handed, last := a.Handed()
 		h.handed = handed
 		// A device that fetched nothing yet is measured from the watch's start, not from the epoch.
-		h.sinceFetch = time.Since(cmp.Or(last, t.start))
-		// The watch starts as Play returns, which understates the media on hand.
-		h.delivered, h.sincePlay = a.Buffered(), time.Since(t.start)
+		h.sinceFetch = now.Sub(cmp.Or(last, t.start))
+	}
+	// Only a device plays; the watch starts as Play returns, which understates the media on hand.
+	if t.m.Phase == Playing {
+		h.paused = !t.pausedAt.IsZero()
+		held := t.held
+		if h.paused {
+			h.sincePause = now.Sub(t.pausedAt)
+			held += h.sincePause
+		}
+		h.played = now.Sub(t.start) - held
 	}
 
 	if t.m.Grace > 0 {
-		h.overdue = time.Since(t.start) > t.m.Grace
+		h.overdue = now.Sub(t.start) > t.m.Grace
 	}
 
 	return h
@@ -170,13 +204,39 @@ type mark struct {
 	position time.Duration
 }
 
-// keepsPace records position and reports whether it moved minPace of paceSpan since the last mark paceSpan old.
-func (t *tracker) keepsPace(now time.Time, position time.Duration) bool {
+// pace records position and reports the media made per second over the trail, zero until it spans two readings.
+func (t *tracker) pace(now time.Time, position time.Duration) float64 {
 	t.trail = append(t.trail, mark{at: now, position: position})
-	for len(t.trail) > 1 && now.Sub(t.trail[1].at) >= paceSpan {
+	for len(t.trail) > 1 && now.Sub(t.trail[1].at) >= rateSpan {
 		t.trail = t.trail[1:]
 	}
-	return position-t.trail[0].position >= time.Duration(minPace*float64(paceSpan))
+	oldest := t.trail[0]
+	if span := now.Sub(oldest.at); span > 0 {
+		return float64(position-oldest.position) / float64(span)
+	}
+	return 0
+}
+
+// hold pauses the device; one that will not be held is judged from then on as one that cannot be.
+func (t *tracker) hold(ctx context.Context, r rule, h Vitals) {
+	if err := t.m.Transport.Pause(ctx); err != nil {
+		t.unholdable = true
+		slog.WarnContext(ctx, "the device would not pause, so it is left to play out what it has", "gate", t.m.Subject, "rule", r.name, "error", err, "health", h.String())
+		return
+	}
+	t.pausedAt = time.Now()
+	slog.InfoContext(ctx, "device held", "gate", t.m.Subject, "rule", r.name, "why", r.why, "health", h.String())
+}
+
+// release resumes a held device; a refusal is retried on the next tick, since the rule still holds.
+func (t *tracker) release(ctx context.Context, r rule, h Vitals) {
+	if err := t.m.Transport.Resume(ctx); err != nil {
+		slog.WarnContext(ctx, "the device would not resume", "gate", t.m.Subject, "rule", r.name, "error", err, "health", h.String())
+		return
+	}
+	t.held += time.Since(t.pausedAt)
+	t.pausedAt = time.Time{}
+	slog.InfoContext(ctx, "device released", "gate", t.m.Subject, "rule", r.name, "why", r.why, "held", h.sincePause.Round(time.Millisecond), "health", h.String())
 }
 
 // fault ends the watch in the producer's own words, logged only while it still runs.
@@ -227,8 +287,9 @@ func (t *tracker) report(ctx context.Context, r rule, h Vitals) {
 		"rule", r.name,
 		"landed_bytes", h.Landed,
 		"media_position", h.Position.Round(time.Second),
-		"speed", float64(h.Speed),
-		"speed_samples", h.Samples,
+		"rate", h.rate,
+		"ahead", h.ahead().Round(time.Second),
+		"paused", h.paused,
 		"transcribed_lead_seconds", int(h.lead),
 		"need_lead_seconds", transcriptionLead.Seconds(),
 	)

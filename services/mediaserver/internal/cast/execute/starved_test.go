@@ -46,18 +46,18 @@ func TestADeviceThatEndsHavingTakenEverythingTheUnfinishedReadMadeIsStarved(t *t
 	madeBytes := int64(len(body))
 	d := delivery{sink: streamedSink{Stream: srv, made: func() media.Progress { return media.Progress{Position: time.Minute, Bytes: madeBytes} }}}
 
-	if !starved(feedOf(read), d) {
+	if _, _, ok := starved(feedOf(read), d); !ok {
 		t.Error("a device that took all the read had made, while the read still ran, was not starved")
 	}
 
 	madeBytes = int64(len(body)) * 2
-	if starved(feedOf(read), d) {
+	if _, _, ok := starved(feedOf(read), d); ok {
 		t.Error("a device that stopped with media still waiting for it was called starved")
 	}
 
 	madeBytes = int64(len(body))
 	close(read.done)
-	if starved(feedOf(read), d) {
+	if _, _, ok := starved(feedOf(read), d); ok {
 		t.Error("a device that took everything from a read that had finished was called starved")
 	}
 }

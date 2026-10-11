@@ -55,6 +55,9 @@ type Device interface {
 
 	AwaitEnd(ctx context.Context) error
 
+	// Pause holds the device on its picture until Resume, while the read behind it gets ahead again.
+	health.Transport
+
 	Capabilities() media.Capabilities
 }
 

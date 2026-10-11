@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"time"
 
 	"github.com/stupside/castor/services/mediaserver/internal/media"
@@ -22,6 +23,9 @@ type Monitor struct {
 
 	// Audience is the device side (nil until device holds URL).
 	Audience Audience
+
+	// Transport holds and releases the device; nil where it cannot be held, or its read never gets ahead.
+	Transport Transport
 
 	// Lead is the transcription frontier (nil if no burn-in).
 	Lead Lead
@@ -55,7 +59,10 @@ type Lead interface {
 type Audience interface {
 	// Handed is the bytes taken and when the last one moved.
 	Handed() (bytes int64, last time.Time)
+}
 
-	// Buffered is the media the device can fetch; a rolling window caps it at its length.
-	Buffered() time.Duration
+// Transport is the device's playback control.
+type Transport interface {
+	Pause(ctx context.Context) error
+	Resume(ctx context.Context) error
 }

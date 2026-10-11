@@ -41,10 +41,10 @@ type PullOptions struct {
 }
 
 func pullReportArgs(verbose bool) []string {
-	// Baseline "warning" and never "error".
-	logLevel := "warning"
+	// Each line carries its level, so a fault quotes complaints rather than the last chatter; baseline "warning" and never "error".
+	logLevel := "level+warning"
 	if verbose {
-		logLevel = "verbose"
+		logLevel = "level+verbose"
 	}
 
 	// -progress on the runner's first extra pipe.

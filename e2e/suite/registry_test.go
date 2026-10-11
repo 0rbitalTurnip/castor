@@ -58,6 +58,7 @@ var (
 		presentation.Periods{},
 		faults.Trickles{},
 		faults.StallsAt{},
+		faults.StallsFor{},
 		faults.Hiccups{},
 		faults.ColdEdge{},
 		faults.Truncates{},

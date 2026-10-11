@@ -34,6 +34,7 @@ var playerStates = map[receiver.Playback]string{
 	receiver.Playing: "play",
 	receiver.Ended:   "stop",
 	receiver.Stopped: "stop",
+	receiver.Starved: "stop",
 }
 
 // Family builds the one Roku there is: castor's channel decodes what it decodes on every model.
@@ -94,8 +95,24 @@ func (d *device) Start(t *testing.T, s *receiver.Session) (receiver.Endpoint, er
 		s.Hand(req.URL.Query().Get("url"), declared)
 	})
 	mux.HandleFunc("GET /query/media-player", func(w http.ResponseWriter, _ *http.Request) {
+		state := playerStates[s.State()]
+		if s.State() == receiver.Playing && s.Held() {
+			state = "pause"
+		}
 		w.Header().Set("Content-Type", "text/xml")
-		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><player error="false" state="` + playerStates[s.State()] + `"/>`))
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><player error="false" state="` + state + `"/>`))
+	})
+	// ECP has one Play key, which the channel toggles on.
+	mux.HandleFunc("POST /keypress/{key}", func(w http.ResponseWriter, req *http.Request) {
+		if key := req.PathValue("key"); key != "Play" {
+			s.Problem("keypress %s, want Play", key)
+			return
+		}
+		if s.State() != receiver.Playing {
+			s.Problem("keypress Play while not playing")
+			return
+		}
+		s.Hold(!s.Held())
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)

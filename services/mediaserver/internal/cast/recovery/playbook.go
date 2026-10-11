@@ -18,6 +18,9 @@ var playbook = map[kind][]strategy{
 	// The device is gone from the cast already, and no attempt resumes mid-program.
 	starved: nil,
 
+	// A slower pace would not make this link faster; the next one may be.
+	tooSlow: {switchCandidate},
+
 	// Decoding comes first; a bitstream this one cannot copy may still copy from another link.
 	copyBrokeUpstream: {decodeAxis, switchCandidate},
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"time"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/container"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/deliver"
@@ -66,8 +65,6 @@ type streamedSink struct {
 }
 
 func (s streamedSink) Audience() health.Audience { return s }
-
-func (s streamedSink) Buffered() time.Duration { return s.made().Position }
 
 func (s streamedSink) Settled() error {
 	handed, _ := s.Handed()

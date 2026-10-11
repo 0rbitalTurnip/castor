@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"slices"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/codec"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/transcode"
@@ -14,6 +15,8 @@ import (
 type buffered struct {
 	reader *pull
 	burn   Burn
+	// live is a read of an edge that arrives at 1x, which no pause gets ahead of.
+	live bool
 }
 
 // read buffers program under its own context, so releasing it stops the read and its transcription before the work dir goes.
@@ -78,7 +81,7 @@ func (s *pipeline) read(work string, program media.Program) (*buffered, error) {
 		<-transcribed
 		return nil
 	})
-	return &buffered{reader: reader, burn: burn}, nil
+	return &buffered{reader: reader, burn: burn, live: slices.ContainsFunc(program.Inputs, func(in media.Input) bool { return in.Fetching().Live })}, nil
 }
 
 // transcription is the burn-in this read feeds, nil where subtitles are off or nothing shows the source has sound.

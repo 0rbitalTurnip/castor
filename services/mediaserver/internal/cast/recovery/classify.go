@@ -3,6 +3,7 @@ package recovery
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/health"
@@ -22,6 +23,8 @@ const (
 	sourceStalled
 	// starved is a device that took everything the read had made while the read was still running.
 	starved
+	// tooSlow is a source measured under playback pace before any device was pointed at it.
+	tooSlow
 	// copyBrokeUpstream is a reader that exited on packets it was copying.
 	copyBrokeUpstream
 	// deviceGone is a device that crashed or switched off, not one that refused.
@@ -42,6 +45,8 @@ func (k kind) String() string {
 		return "source-stalled"
 	case starved:
 		return "starved"
+	case tooSlow:
+		return "too-slow"
 	case copyBrokeUpstream:
 		return "copy-broke-upstream"
 	case deviceGone:
@@ -81,9 +86,9 @@ var classes = []classRule{{
 	kind: unreachable,
 }, {
 	// Media landed then died is deliberately not unreachable; that would send a working cast to recovery.
-	why: "the source read reached a terminal error having landed no media and never stated a speed, so nothing about this link was established",
+	why: "the source read landed no media and never stated a speed, so nothing about this link was established",
 	when: func(e Evidence) bool {
-		return e.Verdict == health.Dead && e.Reached <= health.Reading && e.Vitals.Landed == 0 && e.Vitals.Samples == 0
+		return (e.Verdict == health.Dead || e.Verdict == health.Undeliverable) && e.Reached <= health.Reading && e.Vitals.Landed == 0 && e.Vitals.Samples == 0
 	},
 	kind: unreachable,
 }, {
@@ -124,6 +129,10 @@ var verdictClasses = map[health.Kind]classRule{
 	health.Starved: {
 		why:  "the device ran out of media before the upstream read finished, so the source delivers less than playback consumes",
 		kind: starved,
+	},
+	health.Undeliverable: {
+		why:  "the source delivered less than playback consumes for the whole deliver budget, so no cushion could carry the program",
+		kind: tooSlow,
 	},
 }
 
@@ -214,9 +223,15 @@ func (f *fault) arithmetic() []string {
 	return terms
 }
 
-// tells quotes what the blamed party printed; it never decides a class.
+// tells quotes what the blamed party printed, its complaints before its chatter; it never decides a class.
 func tells(lines []string) []string {
 	const most = 4
+	complaints := slices.DeleteFunc(slices.Clone(lines), func(line string) bool {
+		return !strings.HasPrefix(line, "[error]") && !strings.HasPrefix(line, "[fatal]") && !strings.HasPrefix(line, "[warning]")
+	})
+	if len(complaints) > 0 {
+		lines = complaints
+	}
 	if len(lines) > most {
 		return lines[len(lines)-most:]
 	}

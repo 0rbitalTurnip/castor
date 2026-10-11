@@ -42,7 +42,7 @@ func supervising(ctx context.Context, dev Device, d delivery, f feed) (bool, err
 	var judged chan error
 	if aud := d.sink.Audience(); aud != nil {
 		judged = make(chan error, 1)
-		go func() { judged <- health.Watch(ctx, playingMonitor(f, d, aud)) }()
+		go func() { judged <- health.Watch(ctx, playingMonitor(f, d, aud, dev)) }()
 	}
 
 	select {
@@ -79,9 +79,13 @@ func readMonitor(reader *pull, m health.Monitor) health.Monitor {
 }
 
 // playingMonitor judges a buffered cast by its read, and one reading its source by the encoder serving it.
-func playingMonitor(f feed, d delivery, aud health.Audience) health.Monitor {
+func playingMonitor(f feed, d delivery, aud health.Audience, dev Device) health.Monitor {
 	m := health.Monitor{Subject: "the playing cast", Phase: health.Playing, Audience: aud}
 	if f.buffered != nil {
+		// Only a read that can get ahead of the device is worth holding the device for.
+		if !f.buffered.live {
+			m.Transport = dev
+		}
 		return readMonitor(f.buffered.reader, m)
 	}
 	m.Producer, m.Telemetry = d.output, d.output

@@ -54,8 +54,8 @@ func (s *pipeline) serve(work string, f feed, burn Burn) (health.Phase, error) {
 	slog.InfoContext(s.ctx, "streaming to device")
 	delivered, err := supervising(s.ctx, s.cast.Device, d, f)
 	if err != nil || !delivered {
-		if err == nil && starved(f, d) {
-			return health.Playing, health.DeviceStarved("the playing cast")
+		if made, sent, ok := starved(f, d); err == nil && ok {
+			return health.Playing, health.DeviceStarved("the playing cast", made, sent)
 		}
 		return health.Playing, err
 	}
@@ -138,23 +138,23 @@ func (s *pipeline) relay(o deliver.Opening, reader *pull) (delivery, error) {
 	return delivery{sink: sk, output: reader}, nil
 }
 
-// starved reports whether the device ended on an unfinished read after taking everything it had made.
-func starved(f feed, d delivery) bool {
+// starved reports whether the device ended on an unfinished read after taking everything it had made, and what that was.
+func starved(f feed, d delivery) (made media.Progress, sent int64, ok bool) {
 	if f.buffered == nil {
-		return false
+		return made, 0, false
 	}
 	select {
 	case <-f.buffered.reader.Done():
-		return false
+		return made, 0, false
 	default:
 	}
 	streamed, ok := d.sink.(streamedSink)
 	if !ok {
-		return false
+		return made, 0, false
 	}
-	sent, _ := streamed.Handed()
-	made := streamed.made()
-	return made.Bytes > 0 && sent >= made.Bytes
+	sent, _ = streamed.Handed()
+	made = streamed.made()
+	return made, sent, made.Bytes > 0 && sent >= made.Bytes
 }
 
 const (

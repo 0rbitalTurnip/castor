@@ -3,6 +3,7 @@ package receiver
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -20,13 +21,14 @@ type Playback int
 const (
 	Idle Playback = iota
 	Playing
-	// Ended is the media playing out; Stopped is the viewer ending it first.
+	// Ended is the media playing out; Stopped is the viewer ending it first; Starved is the device running dry.
 	Ended
 	Stopped
+	Starved
 )
 
 // Over reports whether playback has ended either way.
-func (p Playback) Over() bool { return p == Ended || p == Stopped }
+func (p Playback) Over() bool { return p == Ended || p == Stopped || p == Starved }
 
 // ResponseCheck holds the response to the receiver's fetch to a protocol's demands; it returns violations.
 type ResponseCheck func(declared string, h http.Header) []string
@@ -68,6 +70,9 @@ type Session struct {
 	received Received
 	// first closes on the first hand-off, done when its playback ends.
 	first, done chan struct{}
+
+	// clock is the handed playback's clock, which the family's transport holds and releases.
+	clock clock
 }
 
 func NewSession(t *testing.T, setup Setup) *Session {
@@ -129,6 +134,12 @@ func (s *Session) Hand(url, declared string) {
 	})
 }
 
+// Hold pauses or resumes the handed playback, as the device's transport is told to.
+func (s *Session) Hold(on bool) { s.clock.hold(on) }
+
+// Held reports whether the handed playback is paused.
+func (s *Session) Held() bool { return s.clock.holding() }
+
 // State is where playback is now.
 func (s *Session) State() Playback {
 	select {
@@ -171,10 +182,15 @@ func (s *Session) Received(t *testing.T, handOff time.Duration) (Received, bool)
 
 // play fetches url, hands the response to the first player that takes it, and measures the tape.
 func (s *Session) play(url string) Playback {
-	ctx, cancel := s.setup.Viewer.Watch(s.ctx)
+	watched, cancel := s.setup.Viewer.Watch(s.ctx)
 	defer cancel()
+	ctx, starve := context.WithCancelCause(watched)
+	defer starve(nil)
 	ended := func() Playback {
-		if s.setup.Viewer.Stopped(ctx) {
+		switch {
+		case errors.Is(context.Cause(ctx), errStarved):
+			return Starved
+		case s.setup.Viewer.Stopped(watched):
 			return Stopped
 		}
 		return Ended
@@ -217,11 +233,13 @@ func (s *Session) play(url string) Playback {
 		s.Problem("no player takes what %s serves", url)
 		return Ended
 	}
+	// The device plays what it took in at 1x and gives up on an empty buffer, so a sender late to pause it is caught.
+	go s.clock.starve(ctx, starve)
 	tape, err := player.Record(ctx, Recording{
-		URL: url, Body: body, Tape: filepath.Join(s.dir, "tape"), FFmpeg: s.setup.Tools.FFmpeg, Viewer: s.setup.Viewer,
+		URL: url, Body: &timed{r: body, clock: &s.clock}, Tape: filepath.Join(s.dir, "tape"), FFmpeg: s.setup.Tools.FFmpeg, Viewer: s.setup.Viewer,
 	})
 	outcome := ended()
-	if err != nil && outcome != Stopped {
+	if err != nil && outcome == Ended {
 		s.Problem("%s player on %s: %v", player.Name(), url, err)
 		return outcome
 	}

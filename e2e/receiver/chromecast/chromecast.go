@@ -34,6 +34,7 @@ const (
 var idleReasons = map[receiver.Playback]string{
 	receiver.Ended:   "FINISHED",
 	receiver.Stopped: "CANCELLED",
+	receiver.Starved: "INTERRUPTED",
 }
 
 // Settings are how strict the receiver is; castor states the same envelope for every model.
