@@ -92,7 +92,7 @@ jobs:
       contents: read
     env:
       WHISPER: ${{ github.workspace }}/third_party/whisper.cpp
-      BUILD: ${{ github.workspace }}/third_party/whisper.cpp/build
+      BUILD: ${{ github.workspace }}/third_party/whisper.cpp/build_go
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

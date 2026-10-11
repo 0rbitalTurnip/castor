@@ -14,6 +14,8 @@ git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/stupside/hom
 # shellcheck disable=SC2016
 envsubst '$VERSION $SHA_ARM $SHA_INTEL' < .github/homebrew-castor.rb.tmpl > "$tap/Casks/castor.rb"
 git -C "$tap" add Casks/castor.rb
+# A re-run of the same version has nothing new to commit or push.
+git -C "$tap" diff --cached --quiet && exit 0
 git -C "$tap" -c user.name=castor -c user.email=git@castor.dev \
   commit -m "Brew cask update for castor $version"
 git -C "$tap" push

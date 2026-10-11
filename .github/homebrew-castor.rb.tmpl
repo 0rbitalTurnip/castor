@@ -13,7 +13,7 @@ cask "castor" do
   binary "castor"
 
   # Unsigned, so Gatekeeper would quarantine it.
-  postflight_steps do
-    run "/usr/bin/xattr", args: ["-cr", "{{staged_path}}/castor"]
+  postflight do
+    system_command "/usr/bin/xattr", args: ["-cr", "#{staged_path}/castor"]
   end
 end
