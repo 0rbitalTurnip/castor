@@ -18,7 +18,6 @@ import (
 type feed struct {
 	name      string
 	source    timeline.Source
-	patience  time.Duration
 	repackage Repackage
 
 	// refreshing serialises origin reads, so a slow reload never holds up a segment the reader asks for meanwhile.
@@ -41,13 +40,13 @@ type feed struct {
 	reached  int64
 	slots    map[int64]*slot
 	inFlight int
-	// took is how long recent segment reads took, which sets when a slow one is asked for again.
-	took []time.Duration
+	// took is how long the last few segment reads took, which sets when a slow one is asked for again.
+	took ring
 }
 
-// newFeed follows source under name, giving each origin read patience; repackage, when set, serves fMP4 as MPEG-TS.
-func newFeed(name string, source timeline.Source, patience time.Duration, repackage Repackage) *feed {
-	return &feed{name: name, source: source, patience: patience, repackage: repackage, carriage: map[timeline.Map]bool{}, slots: map[int64]*slot{}, reached: -1, life: context.Background()}
+// newFeed follows source under name; repackage, when set, serves fMP4 as MPEG-TS.
+func newFeed(name string, source timeline.Source, repackage Repackage) *feed {
+	return &feed{name: name, source: source, repackage: repackage, carriage: map[timeline.Map]bool{}, slots: map[int64]*slot{}, reached: -1, life: context.Background()}
 }
 
 // refresh reads the origin's window and merges it.
@@ -60,7 +59,7 @@ func (f *feed) refresh(ctx context.Context) error {
 	if closed {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, f.patience)
+	ctx, cancel := context.WithTimeout(ctx, patience)
 	defer cancel()
 	w, err := f.source.Window(ctx)
 	if err != nil {

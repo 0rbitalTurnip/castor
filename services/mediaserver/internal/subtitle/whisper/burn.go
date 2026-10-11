@@ -66,6 +66,10 @@ func (b *Burn) load(ctx context.Context) (subtitle.Recognizer, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading whisper model: %w", err)
 	}
+	if err := checkLanguage(model, b.language); err != nil {
+		_ = model.Close()
+		return nil, nil, err
+	}
 	return recognizer{model: model, language: b.language, vadModelPath: b.vadModelPath}, func() { _ = model.Close() }, nil
 }
 

@@ -20,12 +20,10 @@ type listing struct {
 	relaxed bool
 }
 
-var errNotPlaylist = errors.New("not an HLS playlist")
-
 // scanMedia reads a media playlist whose references resolve against base, where it arrived from.
 func scanMedia(body string, base *url.URL) (listing, error) {
 	if !strings.HasPrefix(strings.TrimLeft(body, "\uFEFF \t\r\n"), signature) {
-		return listing{}, errNotPlaylist
+		return listing{}, errors.New("not an HLS playlist")
 	}
 	var (
 		out      listing
@@ -53,12 +51,11 @@ func scanMedia(body string, base *url.URL) (listing, error) {
 		case tag == timeline.TagEndList:
 			out.closed = true
 		case tag == timeline.TagStart:
+			// EXT-X-START is a hint: one without a usable offset is skipped, not a reason to refuse the playlist.
 			a := attributes(value)
-			offset, err := strconv.ParseFloat(a["TIME-OFFSET"], 64)
-			if err != nil {
-				return listing{}, fmt.Errorf("reading %s: %w", line, err)
+			if offset, err := strconv.ParseFloat(a["TIME-OFFSET"], 64); err == nil {
+				out.start = &timeline.Start{Offset: seconds(offset), Precise: a["PRECISE"] == "YES"}
 			}
-			out.start = &timeline.Start{Offset: seconds(offset), Precise: a["PRECISE"] == "YES"}
 		case tag == timeline.TagInf:
 			duration, _, _ := strings.Cut(value, ",")
 			d, err := strconv.ParseFloat(duration, 64)
@@ -67,7 +64,11 @@ func scanMedia(body string, base *url.URL) (listing, error) {
 			}
 			pending.Duration = seconds(d)
 		case tag == timeline.TagByteRange:
-			pending.Range = byteRange(value)
+			span, ok := byteRange(value)
+			if !ok {
+				return listing{}, fmt.Errorf("reading %s: not length[@offset]", line)
+			}
+			pending.Range = span
 		case tag == timeline.TagDiscontinuity:
 			seam = true
 		case tag == timeline.TagGap:
@@ -90,7 +91,10 @@ func scanMedia(body string, base *url.URL) (listing, error) {
 				return listing{}, fmt.Errorf("reading %s: %w", line, err)
 			}
 			// An init range that states no offset starts at the resource's first byte; no segment precedes it.
-			span := byteRange(a["BYTERANGE"])
+			span, ok := byteRange(a["BYTERANGE"])
+			if !ok {
+				return listing{}, fmt.Errorf("reading %s: BYTERANGE is not length[@offset]", line)
+			}
 			span.Offset = max(span.Offset, 0)
 			// A key in force at the MAP encrypts the init section too, and names its IV outright.
 			init = &timeline.Map{URI: uri.String(), Range: span, Key: key}
@@ -128,18 +132,21 @@ func scanMedia(body string, base *url.URL) (listing, error) {
 	return out, nil
 }
 
-// byteRange reads length[@offset]; an absent offset is marked negative, to continue the resource's last range.
-func byteRange(value string) timeline.Range {
+// byteRange reads length[@offset]; an absent offset is marked negative, to continue the resource's last range, and a value that is neither is not ok.
+func byteRange(value string) (timeline.Range, bool) {
 	if value == "" {
-		return timeline.Range{}
+		return timeline.Range{}, true
 	}
 	length, offset, stated := strings.Cut(value, "@")
-	n, _ := strconv.ParseInt(length, 10, 64)
-	if !stated {
-		return timeline.Range{Offset: -1, Length: n}
+	n, err := strconv.ParseInt(length, 10, 64)
+	if err != nil || n < 0 {
+		return timeline.Range{}, false
 	}
-	o, _ := strconv.ParseInt(offset, 10, 64)
-	return timeline.Range{Offset: o, Length: n}
+	if !stated {
+		return timeline.Range{Offset: -1, Length: n}, true
+	}
+	o, err := strconv.ParseInt(offset, 10, 64)
+	return timeline.Range{Offset: o, Length: n}, err == nil && o >= 0
 }
 
 // attributes reads an attribute list, quoted values keeping their commas.

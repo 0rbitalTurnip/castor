@@ -1,8 +1,8 @@
 package follow
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -11,25 +11,28 @@ import (
 	"github.com/stupside/castor/services/mediaserver/internal/source/timeline"
 )
 
-// read opens a segment, decrypted when the origin encrypted it whole.
-func (f *feed) read(ctx context.Context, s timeline.Segment) (io.ReadCloser, error) {
-	if !decryptable(s.Key) {
-		return f.open(ctx, s.URI, s.Range)
+const (
+	// patience is how long an origin may take to answer, or to send the next byte, before castor gives up on a read.
+	patience = 15 * time.Second
+
+	// segmentLimit is far above any real segment or byte range, and far below a film served in its place.
+	segmentLimit = 256 << 20
+)
+
+var errIdle = errors.New("the origin sent nothing for too long")
+
+// read fetches a segment whole, decrypted when the origin encrypted it.
+func (f *feed) read(ctx context.Context, s timeline.Segment) ([]byte, error) {
+	b, err := f.pull(ctx, s.URI, s.Range, segmentLimit)
+	if err != nil || !decryptable(s.Key) {
+		return b, err
 	}
-	sealed, err := f.whole(ctx, s.URI, s.Range)
-	if err != nil {
-		return nil, err
-	}
-	clear, err := f.decrypt(ctx, sealed, s.Key)
-	if err != nil {
-		return nil, err
-	}
-	return io.NopCloser(bytes.NewReader(clear)), nil
+	return f.decrypt(ctx, b, s.Key)
 }
 
 func (f *feed) initBytes(ctx context.Context, m timeline.Map) ([]byte, error) {
 	return f.initsHeld.get(ctx, m, func(ctx context.Context) ([]byte, error) {
-		b, err := f.document(ctx, m.URI, m.Range)
+		b, err := f.pull(ctx, m.URI, m.Range, source.DocumentLimit)
 		if err != nil || !decryptable(m.Key) {
 			return b, err
 		}
@@ -39,74 +42,49 @@ func (f *feed) initBytes(ctx context.Context, m timeline.Map) ([]byte, error) {
 
 // keyBytes relays a key that the downstream reader handles itself.
 func (f *feed) keyBytes(ctx context.Context, uri string) ([]byte, error) {
-	return f.keysHeld.get(ctx, uri, func(ctx context.Context) ([]byte, error) { return f.document(ctx, uri, timeline.Range{}) })
+	return f.keysHeld.get(ctx, uri, func(ctx context.Context) ([]byte, error) {
+		return f.pull(ctx, uri, timeline.Range{}, source.DocumentLimit)
+	})
 }
 
 // decrypt fetches the raw AES key through the segment's origin session.
 func (f *feed) decrypt(ctx context.Context, sealed []byte, key timeline.Key) ([]byte, error) {
-	secret, err := f.keysHeld.get(ctx, key.URI, func(ctx context.Context) ([]byte, error) {
-		body, err := f.open(ctx, key.URI, timeline.Range{})
-		if err != nil {
-			return nil, err
-		}
-		defer body.Close()
-		return readAESKey(body)
-	})
+	secret, err := f.keyBytes(ctx, key.URI)
 	if err != nil {
 		return nil, fmt.Errorf("reading the key: %w", err)
 	}
 	return decryptAES128(sealed, secret, key.IV)
 }
 
-// whole reads a resource to its end.
-func (f *feed) whole(ctx context.Context, uri string, r timeline.Range) ([]byte, error) {
-	body, err := f.open(ctx, uri, r)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = body.Close() }()
-	return io.ReadAll(body)
-}
-
-// document reads a resource the feed holds on to, refusing one larger than any init section or key.
-func (f *feed) document(ctx context.Context, uri string, r timeline.Range) ([]byte, error) {
-	body, err := f.open(ctx, uri, r)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = body.Close() }()
-	return source.ReadDocument(body)
-}
-
-// open reads from the origin with patience to answer, and patience again whenever it goes quiet.
-func (f *feed) open(ctx context.Context, uri string, r timeline.Range) (io.ReadCloser, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	quiet := time.AfterFunc(f.patience, cancel)
+// pull reads a resource whole, giving up once the origin goes quiet for patience, and refusing more than limit bytes.
+func (f *feed) pull(ctx context.Context, uri string, r timeline.Range, limit int) ([]byte, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	quiet := time.AfterFunc(patience, func() { cancel(errIdle) })
+	defer quiet.Stop()
 	body, err := f.source.Read(ctx, uri, r)
 	if err != nil {
-		quiet.Stop()
-		cancel()
+		if ctx.Err() != nil {
+			return nil, context.Cause(ctx)
+		}
 		return nil, err
 	}
-	return &patient{ReadCloser: body, quiet: quiet, patience: f.patience, cancel: cancel}, nil
-}
-
-// patient is an origin read that gives up once no byte has arrived for its patience.
-type patient struct {
-	io.ReadCloser
-	quiet    *time.Timer
-	patience time.Duration
-	cancel   context.CancelFunc
-}
-
-func (p *patient) Read(b []byte) (int, error) {
-	n, err := p.ReadCloser.Read(b)
-	p.quiet.Reset(p.patience)
-	return n, err
-}
-
-func (p *patient) Close() error {
-	p.quiet.Stop()
-	p.cancel()
-	return p.ReadCloser.Close()
+	defer func() { _ = body.Close() }()
+	var out []byte
+	chunk := make([]byte, 32<<10)
+	for {
+		n, err := body.Read(chunk)
+		quiet.Reset(patience)
+		if out = append(out, chunk[:n]...); len(out) > limit {
+			return nil, fmt.Errorf("larger than %d bytes", limit)
+		}
+		switch {
+		case err == io.EOF:
+			return out, nil
+		case err != nil && ctx.Err() != nil:
+			return nil, context.Cause(ctx)
+		case err != nil:
+			return nil, err
+		}
+	}
 }

@@ -62,3 +62,14 @@ func TestAPageThatIsNotAPlaylistIsNotReadAsOne(t *testing.T) {
 		t.Error("read an HTML page as a media playlist")
 	}
 }
+
+func TestAStartWithoutAnOffsetIsSkippedAndABrokenByteRangeIsRefused(t *testing.T) {
+	base, _ := url.Parse("https://cdn.example/v/index.m3u8")
+	got, err := scanMedia("#EXTM3U\n#EXT-X-START:PRECISE=YES\n#EXTINF:2,\na.ts\n", base)
+	if err != nil || got.start != nil || len(got.segments) != 1 {
+		t.Errorf("a START with no offset gave %+v, %v; want the segment kept and no start", got, err)
+	}
+	if _, err := scanMedia("#EXTM3U\n#EXT-X-BYTERANGE:ten@5\n#EXTINF:2,\na.ts\n", base); err == nil {
+		t.Error("read a byte range that is not a number")
+	}
+}

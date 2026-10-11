@@ -2,6 +2,9 @@
 package mediaroute
 
 import (
+	"io"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 )
@@ -19,6 +22,12 @@ func Handler(serves func(cast, port string) bool) http.Handler {
 		},
 		// Streams flow as they are written: a device starved behind a buffering proxy reads as a stall.
 		FlushInterval: -1,
+		// A listener that stopped serving is a device fetching late, not a server fault worth a stack of log lines.
+		ErrorLog: log.New(io.Discard, "", 0),
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.DebugContext(r.Context(), "a device's fetch could not reach its cast", "path", r.URL.Path, "error", err)
+			w.WriteHeader(http.StatusBadGateway)
+		},
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !serves(r.PathValue("cast"), r.PathValue("port")) {

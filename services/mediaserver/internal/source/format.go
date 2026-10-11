@@ -62,7 +62,7 @@ func (e Env) Choose(ctx context.Context, origin Origin, settled Rendition, prefe
 	slog.Log(ctx, level, msg,
 		"height", chosen.Height, "cap", int(e.MaxHeight), "declared_bitrate", int64(chosen.Bitrate),
 		"representation", chosen.Representation,
-		"renditions", len(origin.Renditions), "sole", origin.Sole())
+		"renditions", len(origin.Renditions))
 	return chosen
 }
 

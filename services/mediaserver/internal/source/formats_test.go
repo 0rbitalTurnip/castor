@@ -1,6 +1,7 @@
 package source_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stupside/castor/services/mediaserver/internal/media"
@@ -49,5 +50,14 @@ func TestALinkIsNamedByTheFormatThatDeclaresItsName(t *testing.T) {
 		if got := formats.ContentTypeOf(sourcetest.URL(t, tc.raw), tc.mime); got != tc.want {
 			t.Errorf("ContentTypeOf(%s, %q) = %q, want %q", tc.raw, tc.mime, got, tc.want)
 		}
+	}
+}
+
+func TestOnlyTheHeadOfABodyIsSniffed(t *testing.T) {
+	formats := source.Formats{hls.Format{}, dash.Format{}}
+	body := strings.Repeat("\x00", 64<<10) + "#EXTM3U"
+	client := &sourcetest.Documents{ByPath: map[string]string{"/index": body}}
+	if got := formats.Identify(t.Context(), client, sourcetest.URL(t, "https://cdn.example/index")); got != "" {
+		t.Errorf("a signature past the first 64 KiB identified %q, want unknown", got)
 	}
 }

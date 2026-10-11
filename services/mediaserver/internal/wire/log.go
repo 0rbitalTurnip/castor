@@ -35,11 +35,10 @@ func FromLevel(l castorv1.LogLevel) slog.Level {
 // Line is r on the wire, its attributes flattened to text under dotted group keys.
 func Line(r slog.Record, attrs []slog.Attr) *castorv1.LogLine {
 	var flat []*castorv1.LogLine_Attr
-	add := func(a slog.Attr) bool { flat = flatten(flat, "", a); return true }
 	for _, a := range attrs {
-		add(a)
+		flat = flatten(flat, "", a)
 	}
-	r.Attrs(add)
+	r.Attrs(func(a slog.Attr) bool { flat = flatten(flat, "", a); return true })
 	return &castorv1.LogLine{Level: Level(r.Level), Message: r.Message, Attrs: flat}
 }
 

@@ -2,11 +2,9 @@ package rank
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/url"
 	"slices"
-	"strings"
 
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 	"github.com/stupside/castor/services/mediaserver/internal/source"
@@ -102,17 +100,6 @@ func logRejection(ctx context.Context, c measured, v admissionRule) {
 		attrs = append(attrs, "video", string(probe.VideoCodec), "audio", string(probe.AudioCodec), "duration", probe.Duration)
 	}
 	slog.WarnContext(ctx, "candidate rejected", attrs...)
-}
-
-// tally counts rejections by the rule that made them, in table order.
-func tally(rejected map[reason]int) string {
-	counts := make([]string, 0, len(rejected))
-	for _, rule := range admissions.rules {
-		if n := rejected[rule.reason]; n > 0 {
-			counts = append(counts, fmt.Sprintf("%d %s", n, rule.reason))
-		}
-	}
-	return strings.Join(counts, ", ")
 }
 
 // movingPicture reports whether the selected video track carries a moving picture, not a still image.

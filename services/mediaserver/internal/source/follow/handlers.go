@@ -43,24 +43,8 @@ func (f *feed) segment(w http.ResponseWriter, r *http.Request) {
 		f.repackaged(ctx, w, s, body)
 		return
 	}
-	f.answer(ctx, w, "application/octet-stream", s, "relay", func(out io.Writer) error {
-		_, err := out.Write(body)
-		return err
-	})
-}
-
-// answer serves what write produces; a failure before its first byte is still answered with a status.
-func (f *feed) answer(ctx context.Context, w http.ResponseWriter, kind string, s timeline.Segment, verb string, write func(io.Writer) error) {
-	out := &committing{w: w, kind: kind}
-	if err := write(out); err != nil && ctx.Err() == nil {
-		slog.WarnContext(ctx, "castor could not "+verb+" a segment", "input", f.name, "uri", s.URI, "error", err)
-		if !out.started {
-			failed(w, err)
-		} else {
-			// The status is already committed; abort the response so a reader sees truncation and retries.
-			panic(http.ErrAbortHandler)
-		}
-	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	_, _ = w.Write(body)
 }
 
 // repackaged serves an fMP4 fragment as MPEG-TS, its init section ahead of it.
@@ -79,9 +63,17 @@ func (f *feed) repackaged(ctx context.Context, w http.ResponseWriter, s timeline
 		failed(w, err)
 		return
 	}
-	f.answer(ctx, w, media.MPEGTS, s, "repackage", func(out io.Writer) error {
-		return f.repackage(ctx, io.MultiReader(bytes.NewReader(init), bytes.NewReader(fragment)), out)
-	})
+	w.Header().Set("Content-Type", media.MPEGTS)
+	out := &committing{w: w}
+	if err := f.repackage(ctx, io.MultiReader(bytes.NewReader(init), bytes.NewReader(fragment)), out); err != nil && ctx.Err() == nil {
+		slog.WarnContext(ctx, "castor could not repackage a segment", "input", f.name, "uri", s.URI, "error", err)
+		if !out.started {
+			failed(w, err)
+			return
+		}
+		// The status is already committed; abort the response so a reader sees truncation and retries.
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // init serves an init section the playlist names, decrypted when the origin encrypted it whole.
@@ -99,7 +91,8 @@ func (f *feed) init(w http.ResponseWriter, r *http.Request) {
 		failed(w, err)
 		return
 	}
-	_, _ = (&committing{w: w, kind: media.MP4}).Write(b)
+	w.Header().Set("Content-Type", media.MP4)
+	_, _ = w.Write(b)
 }
 
 // key relays a key the reader decrypts with itself.
@@ -117,7 +110,8 @@ func (f *feed) key(w http.ResponseWriter, r *http.Request) {
 		failed(w, err)
 		return
 	}
-	_, _ = (&committing{w: w, kind: "application/octet-stream"}).Write(b)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	_, _ = w.Write(b)
 }
 
 // servable answers what castor never reads the origin for: a HEAD, and a resume partway into a resource it builds afresh.
@@ -133,18 +127,14 @@ func servable(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// committing sends its content type with the first byte, so a failure before any can still answer with a status.
+// committing notes whether a response has begun, so a failure before its first byte can still answer with a status.
 type committing struct {
 	w       http.ResponseWriter
-	kind    string
 	started bool
 }
 
 func (c *committing) Write(b []byte) (int, error) {
-	if !c.started && len(b) > 0 {
-		c.w.Header().Set("Content-Type", c.kind)
-		c.started = true
-	}
+	c.started = c.started || len(b) > 0
 	return c.w.Write(b)
 }
 

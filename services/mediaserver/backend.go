@@ -3,6 +3,7 @@ package mediaserver
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
@@ -26,34 +27,40 @@ import (
 // formats is every source format castor reads, in the order a source is offered to them.
 var formats = source.Formats{hls.Format{}, dash.Format{}}
 
+const (
+	ffmpegBinary  = "ffmpeg"
+	ffprobeBinary = "ffprobe"
+	// fetchTimeout bounds each playlist fetch and each probe.
+	fetchTimeout = 30 * time.Second
+	// readDeadline is the mid-read stall bound every fetch plan is derived with.
+	readDeadline = 30 * time.Second
+)
+
 // backend is the machinery the media server casts with, bound to c.
-func (c *Config) backend() Backend {
+func (c *Config) backend() func(*mediav1.PlaybackSettings) cast.Caster {
 	// One origin session for the engine, so every cast and identification share its cookies.
-	client := web.New(c.Resolver.PlaylistTimeout)
+	client := web.New(fetchTimeout)
 	e := &engine{
 		cfg:    *c,
 		client: client,
 		machinery: execute.Machinery{
-			FFmpegPath: c.Transcode.FFmpegPath,
-			Binary:     ffmpeg.Inspect(c.Transcode.FFmpegPath),
-			Encoders:   ffmpeg.Encoders(c.Transcode.FFmpegPath),
-			Probes:     probe.FFprobe(c.Resolver.FFprobePath),
-			// Half the read deadline: a reload castor answers late would end ffmpeg's read like no answer.
-			Timelines: follow.New(client, formats, c.Transcode.RWTimeout/2, follow.Repackager(c.Transcode.FFmpegPath)),
-			InputArgs: formats.InputArgs,
+			FFmpegPath: ffmpegBinary,
+			Binary:     ffmpeg.Inspect(ffmpegBinary),
+			Encoders:   ffmpeg.Encoders(ffmpegBinary),
+			Probes:     probe.FFprobe(ffprobeBinary),
+			Timelines:  follow.New(client, formats, follow.Repackager(ffmpegBinary)),
+			InputArgs:  formats.InputArgs,
 		},
 	}
-	return Backend{
-		Caster: func(asked *mediav1.PlaybackSettings) cast.Caster {
-			return caster{
-				Ranker: rank.New(c.Resolver.Config, media.HeightCap(asked.GetMaxHeight()), func(s *source.Stream) media.Prober {
-					return e.machinery.Probes.Link(probe.Link{URL: s.URL, Headers: s.Headers, InputArgs: formats.InputArgs(s.ContentType, 0)}, c.Resolver.ProbeTimeout)
-				}),
-				engine: e,
-				asked:  asked,
-				subs:   e.subtitles(asked.GetSubtitles()),
-			}
-		},
+	return func(asked *mediav1.PlaybackSettings) cast.Caster {
+		return caster{
+			Ranker: rank.New(e.cfg.Resolver.Config, media.HeightCap(asked.GetMaxHeight()), func(s *source.Stream) media.Prober {
+				return e.machinery.Probes.Link(probe.Link{URL: s.URL, Headers: s.Headers, InputArgs: formats.InputArgs(s.ContentType, 0)}, fetchTimeout)
+			}),
+			engine: e,
+			asked:  asked,
+			subs:   e.subtitles(asked.GetSubtitles()),
+		}
 	}
 }
 
@@ -63,7 +70,7 @@ type engine struct {
 	machinery execute.Machinery
 }
 
-// subtitles burns in language with the configured whisper model, none when language is empty.
+// subtitles burns in the selected language with the configured whisper model, none when the selection disables them.
 func (e *engine) subtitles(selection *castorv1.SubtitleSelection) execute.Subtitles {
 	if selection.GetDisabled() != nil {
 		return nil
@@ -109,7 +116,7 @@ func (k caster) Play(ctx context.Context, device execute.Device, listeners deliv
 	// The ranked streams, head first; the rest are what recovery switches to.
 	return recovery.Cast(ctx, recovery.Intent{
 		Candidates: streams,
-		Deadline:   k.engine.cfg.Transcode.RWTimeout,
+		Deadline:   readDeadline,
 		Delivery:   wire.FromDelivery(k.asked.GetDelivery()),
 		Turns:      turns,
 	}, run, source.NewResolver(k.engine.client, run.MaxHeight, formats))

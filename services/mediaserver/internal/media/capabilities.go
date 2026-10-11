@@ -63,11 +63,6 @@ func (c Capabilities) CanCopyAudio(p ProbeInfo) bool {
 	return slices.ContainsFunc(c.Audio, func(s AudioSupport) bool { return s.accepts(p) })
 }
 
-// SupportsAudioCodec reports whether the device decodes this audio codec natively.
-func (c Capabilities) SupportsAudioCodec(codec Codec) bool {
-	return slices.ContainsFunc(c.Audio, func(s AudioSupport) bool { return s.Codec == codec })
-}
-
 func (s AudioSupport) accepts(p ProbeInfo) bool {
 	if p.AudioCodec != s.Codec {
 		return false

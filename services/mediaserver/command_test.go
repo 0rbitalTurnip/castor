@@ -20,7 +20,7 @@ import (
 )
 
 func TestAServerWithATokenAnswersOnlyThoseCarryingItButHealthChecksAndDevices(t *testing.T) {
-	srv := New(Backend{}, &url.URL{Scheme: "http", Host: "127.0.0.1:9"})
+	srv := New(nil, &url.URL{Scheme: "http", Host: "127.0.0.1:9"})
 	ts := httptest.NewServer(onePort(srv, "secret"))
 	t.Cleanup(ts.Close)
 

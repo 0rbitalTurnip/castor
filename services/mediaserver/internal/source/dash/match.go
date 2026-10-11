@@ -7,6 +7,7 @@ import (
 	"github.com/Eyevinn/dash-mpd/mpd"
 
 	"github.com/stupside/castor/services/mediaserver/internal/media"
+	"github.com/stupside/castor/services/mediaserver/internal/source"
 )
 
 // wanted is what an input reads, matched in each Period by its id first and by what it is after.
@@ -54,9 +55,9 @@ func (w wanted) in(p *mpd.Period) (offered, bool) {
 		}), true
 	}
 	return slices.MaxFunc(candidates, func(a, b offered) int {
-		return cmp.Or(cmp.Compare(boolean(a.set.Lang == w.lang), boolean(b.set.Lang == w.lang)),
-			cmp.Compare(boolean(rank(a.codecs()) == rank(w.codecs)), boolean(rank(b.codecs()) == rank(w.codecs))),
-			cmp.Compare(boolean(channels(a.set, a.rep) == w.channels), boolean(channels(b.set, b.rep) == w.channels)),
+		return cmp.Or(source.CompareBool(a.set.Lang == w.lang, b.set.Lang == w.lang),
+			source.CompareBool(rank(a.codecs()) == rank(w.codecs), rank(b.codecs()) == rank(w.codecs)),
+			source.CompareBool(channels(a.set, a.rep) == w.channels, channels(b.set, b.rep) == w.channels),
 			byAudio(a, b))
 	}), true
 }

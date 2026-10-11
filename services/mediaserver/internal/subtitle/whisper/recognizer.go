@@ -33,8 +33,6 @@ func (r recognizer) Recognize(ctx context.Context, samples []float32, offset flo
 		if err := wctx.SetLanguage(r.language); err != nil {
 			return nil, fmt.Errorf("setting whisper language %q: %w", r.language, err)
 		}
-	} else if r.language != "en" {
-		return nil, fmt.Errorf("the configured whisper model supports English only, not %q", r.language)
 	}
 
 	// Silero VAD filters silence; whisper.cpp maps the timestamps back.
@@ -79,6 +77,14 @@ func (r recognizer) Recognize(ctx context.Context, samples []float32, offset flo
 		})
 	}
 	return words, nil
+}
+
+// checkLanguage refuses a language an English-only model cannot transcribe, once, as the model loads.
+func checkLanguage(model wcpp.Model, language string) error {
+	if !model.IsMultilingual() && language != "en" {
+		return fmt.Errorf("the configured whisper model supports English only, not %q", language)
+	}
+	return nil
 }
 
 // isNoise is whisper's annotation of what is not speech, or the empty text of borderline audio.

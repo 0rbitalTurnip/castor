@@ -234,3 +234,32 @@ func TestTheTargetDurationNeverShrinks(t *testing.T) {
 
 // asListed renders every segment as the origin listed it.
 func asListed(s timeline.Segment, _ int64) timeline.Segment { return s }
+
+// A CDN that signs every reload names the same segments under new queries; they are not new.
+func TestSegmentsReSignedOnEveryReloadAreNotRepublished(t *testing.T) {
+	signed := func(first, last int64, signature string) timeline.Window {
+		w := listed("a", first, last)
+		for i := range w.Segments {
+			w.Segments[i].URI += "?sig=" + signature
+		}
+		return w
+	}
+	var l ledger
+	l.Merge(signed(0, 3, "one"))
+	l.Merge(signed(0, 3, "two"))
+	l.Merge(signed(1, 4, "three"))
+	// Five distinct segments came by, so the sequence stands at 5 and the window holds the last 4.
+	if l.next != 5 || count(playlist(&l), "https://origin.example/") != 4 {
+		t.Errorf("after re-signed reloads the ledger appended %d segments, want 5:\n%s", l.next, l.Render(asListed))
+	}
+}
+
+func TestWhatWasPublishedIsForgottenOnceFarEnoughBack(t *testing.T) {
+	var l ledger
+	for first := range int64(100) {
+		l.Merge(listed("a", first, first+2))
+	}
+	if got := len(l.published); got > 2*l.retain {
+		t.Errorf("remembers %d published segments, want at most %d", got, 2*l.retain)
+	}
+}

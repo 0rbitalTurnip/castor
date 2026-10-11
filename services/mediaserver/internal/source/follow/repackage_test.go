@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -43,16 +44,19 @@ type stored struct {
 	fail *timeline.Failure
 	// breaks makes every fragment body fail before its first byte, when set.
 	breaks bool
+	mu     sync.Mutex
 	reads  map[string]int
 }
 
 func (m *stored) Window(context.Context) (timeline.Window, error) { return m.window, nil }
 
 func (m *stored) Read(_ context.Context, uri string, r timeline.Range) (io.ReadCloser, error) {
+	m.mu.Lock()
 	if m.reads == nil {
 		m.reads = map[string]int{}
 	}
 	m.reads[uri]++
+	m.mu.Unlock()
 	if m.fail != nil && strings.HasSuffix(uri, ".m4s") {
 		return nil, m.fail
 	}
@@ -161,7 +165,7 @@ func TestNothingIsListedBeforeCastorKnowsHowToServeIt(t *testing.T) {
 	m := fragmented("avc1")
 	init := m.resources["https://origin.example/init.mp4"]
 	delete(m.resources, "https://origin.example/init.mp4")
-	feed := newFeed("primary", m, time.Second, labelled)
+	feed := newFeed("primary", m, labelled)
 	if err := feed.refresh(t.Context()); err == nil || feed.render != nil {
 		t.Fatalf("rendered %q before the init section deciding its addressing could be read", feed.render)
 	}

@@ -14,12 +14,6 @@ import (
 	"github.com/stupside/castor/services/mediaserver/internal/mediaroute"
 )
 
-// Backend is what the media server casts with, bound at the composition root.
-type Backend struct {
-	// Caster binds one cast to what it asked.
-	Caster func(asked *mediav1.PlaybackSettings) cast.Caster
-}
-
 // Server is the media server: its API, for the API server alone, and its media route, for devices.
 type Server struct {
 	API   http.Handler
@@ -27,9 +21,9 @@ type Server struct {
 	casts *cast.Service
 }
 
-// New serves the media contract with b, telling devices to reach its media route at reach.
-func New(b Backend, reach *url.URL) *Server {
-	casts := cast.New(b.Caster, reach)
+// New serves the media contract, binding each cast to what it asked with caster, telling devices to reach its media route at reach.
+func New(caster func(asked *mediav1.PlaybackSettings) cast.Caster, reach *url.URL) *Server {
+	casts := cast.New(caster, reach)
 
 	valid := transport.Checked()
 	api := http.NewServeMux()

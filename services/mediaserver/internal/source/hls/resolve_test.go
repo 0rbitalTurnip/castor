@@ -44,7 +44,7 @@ func TestResolveNarrowsAMasterToTheRungUnderTheCap(t *testing.T) {
 	if chosen.Height != 1080 || chosen.Bitrate != 6_200_000 {
 		t.Errorf("chosen rung = %+v, want 1080p at the declared 6200000 bit/s", chosen)
 	}
-	if len(origin.Renditions) != 3 || origin.Sole() {
+	if len(origin.Renditions) != 3 {
 		t.Errorf("renditions = %v, want the whole three-rung ladder", origin.Renditions)
 	}
 	if origin.Framing != media.FramingOutOfBand || origin.Duration != 18*time.Second || origin.Live || origin.Protection != "" {

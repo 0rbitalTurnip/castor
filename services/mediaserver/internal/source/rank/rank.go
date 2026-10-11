@@ -8,8 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-
-	"golang.org/x/sync/errgroup"
+	"sync"
 
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 	"github.com/stupside/castor/services/mediaserver/internal/source"
@@ -39,8 +38,6 @@ func (r *Ranker) Rank(ctx context.Context, streams []*source.Stream) ([]*source.
 	streams = limitPerHost(ctx, streams)
 
 	pool := make([]*source.Stream, 0, len(streams))
-	rejected := make(map[reason]int)
-	reasons := make(map[*source.Stream]reason, len(streams))
 	measured := r.measureAll(ctx, streams)
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
@@ -48,26 +45,21 @@ func (r *Ranker) Rank(ctx context.Context, streams []*source.Stream) ([]*source.
 	for _, m := range measured {
 		v := admit(m)
 		if !v.admit {
-			rejected[v.reason]++
 			logRejection(ctx, m, v)
 			continue
 		}
-		m.LastResort, reasons[m.Stream] = v.lastResort, v.reason
+		m.LastResort = v.lastResort
 		pool = append(pool, m.Stream)
 	}
 	if len(pool) == 0 {
-		return nil, fmt.Errorf("no castable stream: none of %d candidates was admitted (%s)", len(streams), tally(rejected))
-	}
-	if len(rejected) > 0 {
-		slog.InfoContext(ctx, "rejected candidates", "kept", len(pool), "detail", tally(rejected))
+		return nil, fmt.Errorf("no castable stream: none of %d candidates was admitted", len(streams))
 	}
 
 	order := ranked(pool, r.maxHeight)
 	best := order[0]
 	slog.InfoContext(ctx, "best stream selected", "url", best.URL.String(),
 		"bitrate", int64(best.Bitrate()), "height", height(best), "last_resort", best.LastResort,
-		"reason", string(reasons[best]),
-		"renditions", best.Ladder, "alternatives", len(order)-1)
+		"alternatives", len(order)-1)
 	return order, nil
 }
 
@@ -118,10 +110,12 @@ type measured struct {
 // measureAll measures every candidate concurrently, bounded by the configured fan-out.
 func (r *Ranker) measureAll(ctx context.Context, streams []*source.Stream) []measured {
 	out := make([]measured, len(streams))
-	var g errgroup.Group
-	g.SetLimit(r.cfg.ProbeMaxConcurrency)
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, r.cfg.ProbeMaxConcurrency)
 	for i, s := range streams {
-		g.Go(func() error {
+		slots <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-slots }()
 			slog.DebugContext(ctx, "probing stream", "url", s.URL, "index", i+1, "total", len(streams))
 			info, reach, err := r.probes(s).Probe(ctx)
 			// Carried, never re-derived: the ladder was read from a body only the browser held.
@@ -135,9 +129,8 @@ func (r *Ranker) measureAll(ctx context.Context, streams []*source.Stream) []mea
 				next.ContentType = cmp.Or(next.ContentType, info.ContentType)
 			}
 			out[i] = measured{Stream: &next, reach: reach}
-			return nil
 		})
 	}
-	_ = g.Wait()
+	wg.Wait()
 	return out
 }

@@ -64,6 +64,8 @@ func (fs Formats) Identify(ctx context.Context, c Client, u *url.URL) string {
 	if err != nil {
 		return ""
 	}
+	// A server that ignores the Range answers the whole file, whose tail is not the grammar of a playlist.
+	body = body[:min(len(body), sniffBytes)]
 	for _, f := range fs {
 		if f.Recognize(body) {
 			return f.Identity().ContentType

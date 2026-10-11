@@ -2,6 +2,7 @@ package follow
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/stupside/castor/services/mediaserver/internal/source/timeline"
@@ -16,8 +17,9 @@ type ledger struct {
 	dropped int64
 	// retain is the longest window the origin has published.
 	retain int
-	// published is every segment ever appended, so one a lagging edge lists again is never republished, however long ago it was trimmed.
+	// published is the segments appended lately, so one a lagging edge lists again is never republished; it outlives the entries by a window.
 	published map[identity]bool
+	appended  []identity
 	periods   map[string]bool
 	closed    bool
 	start     *timeline.Start
@@ -34,16 +36,18 @@ type breaks struct {
 	Restarts, Gaps int
 }
 
-// identity is what makes two listings the same segment, whatever number the origin gave it.
+// identity is what makes two listings the same segment, whatever number or signature the origin gave it.
 type identity struct {
-	uri    string
+	path   string
 	span   timeline.Range
 	period string
 	start  int64
 }
 
+// identify keys a segment by where it sits and what it is, not by the query a CDN re-signs on every reload.
 func identify(s timeline.Segment) identity {
-	return identity{s.URI, s.Range, s.Place.Period, s.Place.Start}
+	path, _, _ := strings.Cut(s.URI, "?")
+	return identity{path, s.Range, s.Place.Period, s.Place.Start}
 }
 
 // Merge appends what the window lists past the last segment published.
@@ -105,7 +109,9 @@ func (l *ledger) append(s timeline.Segment) {
 		l.periods, l.published = map[string]bool{}, map[identity]bool{}
 	}
 	l.periods[s.Place.Period] = true
-	l.published[identify(s)] = true
+	id := identify(s)
+	l.published[id] = true
+	l.appended = append(l.appended, id)
 	l.entries = append(l.entries, entry{Segment: s, sequence: l.next})
 	l.next++
 	l.longest = max(l.longest, s.Duration)
@@ -113,6 +119,11 @@ func (l *ledger) append(s timeline.Segment) {
 
 // trim keeps as many entries as the origin's longest window, so a reader lagging the edge never loses one castor dropped first.
 func (l *ledger) trim() {
+	// A lagging edge lists at most one window, so twice that is far enough back to remember.
+	for len(l.appended) > 2*l.retain {
+		delete(l.published, l.appended[0])
+		l.appended = l.appended[1:]
+	}
 	over := len(l.entries) - l.retain
 	if over <= 0 {
 		return

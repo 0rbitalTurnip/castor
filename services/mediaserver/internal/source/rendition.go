@@ -25,3 +25,14 @@ type Rendition struct {
 	// Declared is the codec envelope the source declared for this rung.
 	Declared *media.ProbeInfo
 }
+
+// CompareBool orders false before true.
+func CompareBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case b:
+		return -1
+	}
+	return 1
+}

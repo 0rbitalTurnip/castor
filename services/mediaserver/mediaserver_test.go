@@ -49,9 +49,7 @@ func machinery(p play) *engine {
 	return &engine{play: p, asked: make(chan *mediav1.PlaybackSettings, 4), measured: make(chan *source.Stream, 1), ranked: make(chan []*source.Stream, 1)}
 }
 
-func (e *engine) backend() mediaserver.Backend {
-	return mediaserver.Backend{Caster: e.caster}
-}
+func (e *engine) backend() func(*mediav1.PlaybackSettings) cast.Caster { return e.caster }
 
 func (e *engine) caster(asked *mediav1.PlaybackSettings) cast.Caster {
 	e.asked <- asked
@@ -156,7 +154,7 @@ type server struct {
 	running *mediaserver.Server
 }
 
-func serve(t *testing.T, b mediaserver.Backend) server {
+func serve(t *testing.T, b func(*mediav1.PlaybackSettings) cast.Caster) server {
 	t.Helper()
 	lan, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

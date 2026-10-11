@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 	"github.com/stupside/castor/services/mediaserver/internal/source"
@@ -13,16 +12,14 @@ import (
 
 // Republisher serves ffmpeg the inputs whose timelines castor keeps, on loopback, for one read.
 type Republisher struct {
-	client  source.Client
-	formats source.Formats
-	// patience bounds each origin fetch, so a reload is answered before the reader's own deadline.
-	patience  time.Duration
+	client    source.Client
+	formats   source.Formats
 	repackage Repackage
 }
 
 // New follows timelines on client, which must be the session resolution read through; repackage serves fMP4 as MPEG-TS.
-func New(client source.Client, formats source.Formats, patience time.Duration, repackage Repackage) Republisher {
-	return Republisher{client: client, formats: formats, patience: patience, repackage: repackage}
+func New(client source.Client, formats source.Formats, repackage Repackage) Republisher {
+	return Republisher{client: client, formats: formats, repackage: repackage}
 }
 
 // Republish points each followed input at its republished timeline; the func stops serving them.
@@ -41,7 +38,7 @@ func (r Republisher) Republish(parent context.Context, program media.Program) (m
 		if fetch := in.Fetching(); !fetch.Live && !fetch.Spliced {
 			repackage = nil
 		}
-		feed := newFeed(string(in.ID), src, r.patience, repackage)
+		feed := newFeed(string(in.ID), src, repackage)
 		if err := feed.start(ctx); err != nil {
 			// A representation has no reading but castor's; a playlist castor cannot follow stays ffmpeg's to read.
 			if in.Representation != "" {

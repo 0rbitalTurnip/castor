@@ -3,8 +3,10 @@ package follow
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -86,7 +88,7 @@ func played(t *testing.T, f *feed, segments int) time.Duration {
 func TestSegmentsAreReadAheadSeveralAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := origin(12, 2*time.Second)
-		f := newFeed("primary", o, time.Minute, nil)
+		f := newFeed("primary", o, nil)
 		if err := f.start(t.Context()); err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +105,7 @@ func TestSegmentsAreReadAheadSeveralAtOnce(t *testing.T) {
 func TestASegmentReadThatHangsIsAskedForAgain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := origin(3, time.Second, "https://origin.example/1.ts")
-		f := newFeed("primary", o, time.Minute, nil)
+		f := newFeed("primary", o, nil)
 		if err := f.start(t.Context()); err != nil {
 			t.Fatal(err)
 		}
@@ -119,7 +121,7 @@ func TestASegmentReadThatHangsIsAskedForAgain(t *testing.T) {
 func TestReadingAheadStopsAtTheWindow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := origin(40, 100*time.Millisecond)
-		f := newFeed("primary", o, time.Minute, nil)
+		f := newFeed("primary", o, nil)
 		if err := f.start(t.Context()); err != nil {
 			t.Fatal(err)
 		}
@@ -132,4 +134,92 @@ func TestReadingAheadStopsAtTheWindow(t *testing.T) {
 			t.Errorf("read %d of 40 segments for a reader at the first, want only the window ahead of it", read)
 		}
 	})
+}
+
+// flaky fails the first read of each uri it is told to, then serves it.
+type flaky struct {
+	*throttled
+	failing map[string]bool
+}
+
+func (o *flaky) Read(ctx context.Context, uri string, r timeline.Range) (io.ReadCloser, error) {
+	o.mu.Lock()
+	fail := o.failing[uri]
+	delete(o.failing, uri)
+	o.mu.Unlock()
+	if fail {
+		return nil, errors.New("connection reset")
+	}
+	return o.throttled.Read(ctx, uri, r)
+}
+
+func TestASegmentThatFailedAheadOfTheReaderIsReadAgainWhenAskedFor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		uri := "https://origin.example/1.ts"
+		f := newFeed("primary", origin(3, time.Second), nil)
+		if err := f.start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		s, _ := f.ledger.Entry(1)
+		f.mu.Lock()
+		f.slots[1] = &slot{done: make(chan struct{}), err: errors.New("stale failure")}
+		close(f.slots[1].done)
+		f.mu.Unlock()
+		b, err := f.fetched(t.Context(), 1, s)
+		if err != nil || string(b) != uri {
+			t.Errorf("segment 1 = %q, %v; want it read again, not the earlier failure replayed", b, err)
+		}
+	})
+}
+
+func TestAFailedReadIsAskedAgainAfterAPause(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		uri := "https://origin.example/0.ts"
+		o := &flaky{throttled: origin(1, 0), failing: map[string]bool{uri: true}}
+		f := newFeed("primary", o, nil)
+		if err := f.start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		began := time.Now()
+		if took := played(t, f, 1); took < retryAfter {
+			t.Errorf("asked again after %v, want a pause of at least %v", time.Since(began), retryAfter)
+		}
+	})
+}
+
+func TestAnOriginThatGoesQuietMidReadIsGivenUpOn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pr, pw := io.Pipe()
+		defer pw.Close()
+		go func() { _, _ = pw.Write([]byte("start")) }()
+		f := newFeed("primary", readerSource{pr}, nil)
+		_, err := f.pull(t.Context(), "https://origin.example/0.ts", timeline.Range{}, segmentLimit)
+		if !errors.Is(err, errIdle) {
+			t.Errorf("pull = %v, want the quiet origin given up on", err)
+		}
+	})
+}
+
+func TestAResourceLargerThanItsLimitIsRefused(t *testing.T) {
+	body := strings.Repeat("x", 100)
+	f := newFeed("primary", readerSource{strings.NewReader(body)}, nil)
+	if _, err := f.pull(t.Context(), "https://origin.example/0.ts", timeline.Range{}, 99); err == nil {
+		t.Error("read 100 bytes against a limit of 99")
+	}
+	f = newFeed("primary", readerSource{strings.NewReader(body)}, nil)
+	if b, err := f.pull(t.Context(), "https://origin.example/0.ts", timeline.Range{}, 100); err != nil || len(b) != 100 {
+		t.Errorf("pull at the limit = %d bytes, %v; want them all", len(b), err)
+	}
+}
+
+// readerSource serves one body for every read, honouring cancellation when it is a pipe.
+type readerSource struct{ io.Reader }
+
+func (readerSource) Window(context.Context) (timeline.Window, error) { return timeline.Window{}, nil }
+
+func (s readerSource) Read(ctx context.Context, _ string, _ timeline.Range) (io.ReadCloser, error) {
+	if pr, ok := s.Reader.(*io.PipeReader); ok {
+		go func() { <-ctx.Done(); pr.CloseWithError(context.Cause(ctx)) }()
+	}
+	return io.NopCloser(s.Reader), nil
 }

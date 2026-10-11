@@ -29,9 +29,6 @@ type Origin struct {
 	Duration time.Duration
 }
 
-// Sole reports that the source gave castor no choice: it published one rendition, or none that could be read.
-func (o Origin) Sole() bool { return len(o.Renditions) < 2 }
-
 // Choose is the rung a cast reads: the best the ceiling admits by preferred, else the shortest on offer.
 func (o Origin) Choose(ceiling media.HeightCap, preferred func(a, b Rendition) int) Rendition {
 	admitted := slices.DeleteFunc(slices.Clone(o.Renditions), func(r Rendition) bool { return !ceiling.Admits(r.Height) })

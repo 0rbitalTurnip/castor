@@ -28,14 +28,3 @@ const (
 	// LadderSole is a playlist advertising no renditions: it IS the rendition.
 	LadderSole
 )
-
-func (l Ladder) String() string {
-	switch l {
-	case LadderMultivariant:
-		return "multivariant"
-	case LadderSole:
-		return "sole"
-	default:
-		return "unknown"
-	}
-}

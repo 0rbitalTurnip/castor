@@ -49,24 +49,17 @@ func exceedsCap(c *source.Stream, ceiling media.HeightCap) bool {
 func preference(a, b *source.Stream, ceiling media.HeightCap) int {
 	return cmp.Or(
 		// A measured link beats one admitted unmeasured.
-		cmp.Compare(boolean(!a.LastResort), boolean(!b.LastResort)),
-		cmp.Compare(boolean(!exceedsCap(a, ceiling)), boolean(!exceedsCap(b, ceiling))),
+		source.CompareBool(!a.LastResort, !b.LastResort),
+		source.CompareBool(!exceedsCap(a, ceiling), !exceedsCap(b, ceiling)),
 		// The only signal here about RECOVERY rather than the picture: a master carries rungs to fall back to.
-		cmp.Compare(boolean(carriesLadder(a)), boolean(carriesLadder(b))),
+		source.CompareBool(carriesLadder(a), carriesLadder(b)),
 		// A height is evidence that the selected track is a picture; zero is unknown, not short.
-		cmp.Compare(boolean(height(a) > 0), boolean(height(b) > 0)),
+		source.CompareBool(height(a) > 0, height(b) > 0),
 		cmp.Compare(height(a), height(b)),
 		cmp.Compare(a.Bitrate(), b.Bitrate()),
 		// Smaller is deliberately preferred only as a reproducible final tie-break.
 		cmp.Compare(b.URL.String(), a.URL.String()),
 	)
-}
-
-func boolean(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // ranked is the ordering a cast walks: best first, every admitted candidate present.

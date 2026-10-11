@@ -100,12 +100,5 @@ func rank(codecs string) int {
 
 // byAudio prefers the main track, then the codec a device likeliest decodes, then the richer.
 func byAudio(a, b offered) int {
-	return cmp.Or(cmp.Compare(boolean(mainRole(a.set)), boolean(mainRole(b.set))), cmp.Compare(rank(a.codecs()), rank(b.codecs())), cmp.Compare(a.rep.Bandwidth, b.rep.Bandwidth))
-}
-
-func boolean(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+	return cmp.Or(source.CompareBool(mainRole(a.set), mainRole(b.set)), cmp.Compare(rank(a.codecs()), rank(b.codecs())), cmp.Compare(a.rep.Bandwidth, b.rep.Bandwidth))
 }

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/stupside/castor/services/mediaserver/internal/source/timeline"
@@ -47,16 +46,4 @@ const aes128 = "AES-128"
 // decryptable is whole-resource AES-128 under a key whose URI serves the raw key bytes.
 func decryptable(k timeline.Key) bool {
 	return k.Method == aes128 && (k.Format == "" || k.Format == timeline.IdentityFormat)
-}
-
-// readAESKey reads the raw 128-bit key; the extra byte rejects oversized responses.
-func readAESKey(r io.Reader) ([]byte, error) {
-	key, err := io.ReadAll(io.LimitReader(r, aes.BlockSize+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(key) != aes.BlockSize {
-		return nil, fmt.Errorf("an AES-128 key must contain exactly %d bytes", aes.BlockSize)
-	}
-	return key, nil
 }

@@ -10,20 +10,17 @@ import (
 
 type languageContext struct {
 	wcpp.Context
-	language    string
-	englishOnly bool
-	processed   bool
+	language string
 }
 
-func (c *languageContext) IsMultilingual() bool       { return !c.englishOnly }
+func (*languageContext) IsMultilingual() bool         { return true }
 func (c *languageContext) SetLanguage(s string) error { c.language = s; return nil }
 func (*languageContext) SetVAD(bool)                  {}
 func (*languageContext) SetVADModelPath(string)       {}
 func (*languageContext) SetTokenTimestamps(bool)      {}
 func (*languageContext) SetSplitOnWord(bool)          {}
 func (*languageContext) SetMaxSegmentLength(uint)     {}
-func (c *languageContext) Process([]float32, wcpp.EncoderBeginCallback, wcpp.SegmentCallback, wcpp.ProgressCallback) error {
-	c.processed = true
+func (*languageContext) Process([]float32, wcpp.EncoderBeginCallback, wcpp.SegmentCallback, wcpp.ProgressCallback) error {
 	return nil
 }
 func (*languageContext) NextSegment() (wcpp.Segment, error) { return wcpp.Segment{}, io.EOF }
@@ -47,14 +44,24 @@ func TestAutomaticRecognitionEnablesLanguageDetection(t *testing.T) {
 	}
 }
 
-func TestAutomaticRecognitionRejectsAnEnglishOnlyModelBeforeProcessing(t *testing.T) {
-	ctx := &languageContext{language: "en", englishOnly: true}
-	r := recognizer{model: languageModel{context: ctx}, language: "auto"}
-	_, err := r.Recognize(t.Context(), make([]float32, 1600), 0, "")
-	if err == nil || !strings.Contains(err.Error(), "supports English only") {
-		t.Errorf("Recognize = %v, want the model's inability to detect language", err)
-	}
-	if ctx.processed {
-		t.Error("recognition started on an English-only model despite automatic detection being requested")
+type modelOf struct {
+	wcpp.Model
+	multilingual bool
+}
+
+func (m modelOf) IsMultilingual() bool { return m.multilingual }
+
+func TestAnEnglishOnlyModelIsRefusedAtLoadForAnyOtherLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		multilingual bool
+		language     string
+		refused      bool
+	}{
+		{false, "auto", true}, {false, "fr", true}, {false, "en", false}, {true, "auto", false},
+	} {
+		err := checkLanguage(modelOf{multilingual: tc.multilingual}, tc.language)
+		if (err != nil) != tc.refused || (err != nil && !strings.Contains(err.Error(), "supports English only")) {
+			t.Errorf("multilingual %v, language %q: checkLanguage = %v, want refused %v", tc.multilingual, tc.language, err, tc.refused)
+		}
 	}
 }

@@ -2,7 +2,6 @@ package follow
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"slices"
 	"time"
@@ -26,7 +25,31 @@ const (
 
 	// remembered is how many recent reads the hedge deadline is taken from.
 	remembered = 8
+
+	// retryAfter is the pause before a failed read is asked again, growing with each failure.
+	retryAfter = 250 * time.Millisecond
 )
+
+// ring is the last few read durations.
+type ring struct {
+	buf   [remembered]time.Duration
+	count int
+}
+
+func (r *ring) add(d time.Duration) {
+	r.buf[r.count%remembered] = d
+	r.count++
+}
+
+// median is the middle of what the ring holds, false when it holds nothing.
+func (r *ring) median() (time.Duration, bool) {
+	held := slices.Clone(r.buf[:min(r.count, remembered)])
+	if len(held) == 0 {
+		return 0, false
+	}
+	slices.Sort(held)
+	return held[len(held)/2], true
+}
 
 // slot is one segment read ahead of the reader: its bytes once done closes.
 type slot struct {
@@ -40,8 +63,8 @@ func (f *feed) fetched(ctx context.Context, sequence int64, s timeline.Segment) 
 	f.mu.Lock()
 	f.reached = max(f.reached, sequence)
 	sl, ok := f.slots[sequence]
-	if !ok {
-		// The reader is waiting on it, so it does not wait for a free slot.
+	if !ok || sl.err != nil {
+		// The reader is waiting on it, so it does not wait for a free slot; a read ahead that failed is asked for afresh.
 		sl = f.launch(sequence, s)
 	}
 	f.pump()
@@ -94,10 +117,7 @@ func (f *feed) launch(sequence int64, s timeline.Segment) *slot {
 		f.inFlight--
 		sl.body, sl.err = body, err
 		if err == nil {
-			f.took = append(f.took, time.Since(began))
-			if len(f.took) > remembered {
-				f.took = f.took[1:]
-			}
+			f.took.add(time.Since(began))
 		}
 		close(sl.done)
 		f.pump()
@@ -120,18 +140,14 @@ func (f *feed) hedged(ctx context.Context, s timeline.Segment) ([]byte, error) {
 		running++
 		go func() {
 			body, err := f.read(ctx, s)
-			if err != nil {
-				answers <- answer{err: err}
-				return
-			}
-			defer func() { _ = body.Close() }()
-			b, err := io.ReadAll(body)
-			answers <- answer{b, err}
+			answers <- answer{body, err}
 		}()
 	}
 	ask()
 	hedge := time.NewTimer(f.hedgeAfter())
 	defer hedge.Stop()
+	// retry is the pause after a failure, nil while none is pending.
+	var retry <-chan time.Time
 	var failure error
 	for {
 		select {
@@ -149,9 +165,14 @@ func (f *feed) hedged(ctx context.Context, s timeline.Segment) ([]byte, error) {
 				return nil, a.err
 			}
 			if asked < attempts {
-				ask()
+				retry = time.After(retryAfter * time.Duration(asked))
 			} else if running == 0 {
 				return nil, failure
+			}
+		case <-retry:
+			retry = nil
+			if asked < attempts {
+				ask()
 			}
 		case <-hedge.C:
 			if asked < attempts {
@@ -168,11 +189,10 @@ func (f *feed) hedged(ctx context.Context, s timeline.Segment) ([]byte, error) {
 // hedgeAfter is twice the median of recent reads, within its floor and the feed's patience; with none yet, a default.
 func (f *feed) hedgeAfter() time.Duration {
 	f.mu.Lock()
-	took := slices.Clone(f.took)
+	median, any := f.took.median()
 	f.mu.Unlock()
-	if len(took) == 0 {
-		return min(hedgeDefault, f.patience)
+	if !any {
+		return min(hedgeDefault, patience)
 	}
-	slices.Sort(took)
-	return min(max(2*took[len(took)/2], hedgeFloor), f.patience)
+	return min(max(2*median, hedgeFloor), patience)
 }
