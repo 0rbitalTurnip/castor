@@ -19,29 +19,18 @@ const (
 	reasonSubtitleBurnIn  Reason = "subtitle-burn-in"
 )
 
-// refusalRule is one row of an axis's copy-refusal table, with reason, prose, and when it applies.
+// refusalRule is one row of an axis's copy-refusal table, with reason and when it applies.
 type refusalRule struct {
 	reason Reason
-	// why is the same refusal in prose for the one line that states it, and is a function of the subject.
-	why func(Inputs) string
 	// when reports whether this row refuses this subject.
 	when func(Inputs) bool
 }
 
-// says returns a constant why function for a row whose reasoning is the same sentence for every subject.
-func says(why string) func(Inputs) string { return func(Inputs) string { return why } }
-
-// Refusal is one fired row: why this axis is not copied.
-type Refusal struct {
-	Reason Reason
-	Why    string
-}
-
-func refuse(table []refusalRule, in Inputs) []Refusal {
-	var fired []Refusal
+func refuse(table []refusalRule, in Inputs) []Reason {
+	var fired []Reason
 	for _, r := range table {
 		if r.when(in) {
-			fired = append(fired, Refusal{Reason: r.reason, Why: r.why(in)})
+			fired = append(fired, r.reason)
 		}
 	}
 	return fired

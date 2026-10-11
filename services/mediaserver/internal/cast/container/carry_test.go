@@ -29,6 +29,8 @@ func TestUncarriedMatrix(t *testing.T) {
 		{"flac is silently dropped by mpegts", media.ProbeInfo{VideoCodec: media.CodecH264, AudioCodec: media.CodecFLAC}, mpegts, false, true},
 		{"flac travels in mp4", media.ProbeInfo{VideoCodec: media.CodecH264, AudioCodec: media.CodecFLAC}, mp4, false, false},
 		// Alone in fragmented mp4 it decodes silently wrong.
+		{"flv1 is private data in mpegts", media.ProbeInfo{VideoCodec: "flv1", AudioCodec: media.CodecAAC}, mpegts, true, false},
+		{"mpeg2 travels in mpegts", media.ProbeInfo{VideoCodec: "mpeg2video", AudioCodec: media.CodecAAC}, mpegts, false, false},
 		{"truehd alone in a fragmented mp4 is sliced wrong", media.ProbeInfo{AudioCodec: media.CodecTrueHD}, mp4, false, true},
 		{"truehd beside video is correct", media.ProbeInfo{VideoCodec: media.CodecH264, AudioCodec: media.CodecTrueHD}, mp4, false, false},
 	} {

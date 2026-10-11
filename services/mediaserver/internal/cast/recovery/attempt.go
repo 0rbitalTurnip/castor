@@ -59,7 +59,7 @@ type Attempt struct {
 	Delivery compose.DeliveryPreference
 }
 
-// identity is exactly the fields a strategy can change, for both the log and the ledger.
+// identity is exactly the fields a strategy can change, which is the ledger's key; Try is left out.
 type identity struct {
 	candidate int
 	program   string
@@ -71,39 +71,24 @@ type identity struct {
 }
 
 // identify reads unset fields as their defaults.
-func (a Attempt) identify(redactURLSecrets bool) identity {
+func (a Attempt) identify() identity {
 	return identity{
 		candidate: a.candidate,
-		program:   programIdentity(a.Program, redactURLSecrets),
+		program:   programIdentity(a.Program),
 		bitrate:   a.Rendition.Bitrate,
 		height:    a.Rendition.Height,
-		fetch:     cmp.Or(a.Fetch.String(), "unset"),
+		fetch:     fmt.Sprint(a.Fetch),
 		delivery:  cmp.Or(a.Delivery, compose.DeliveryAuto),
 		decode:    a.Decode,
 	}
 }
 
-// String is the ledger's key too, so a field left out of it is a change the ledger misses.
-func (id identity) String() string {
-	return fmt.Sprintf("candidate=%d program=%s rung_bitrate=%d rung_height=%d fetch=%s delivery=%s decode=%s",
-		id.candidate, id.program, id.bitrate, id.height, id.fetch, id.delivery, id.decode)
-}
-
-// String redacts the URL secrets, because a line a user reads is not a place to print a signed query.
-func (a Attempt) String() string { return a.identify(true).String() }
-
 // programIdentity covers every input and track, so a change to any of them is a new attempt.
-func programIdentity(program media.Program, redactURLSecrets bool) string {
+func programIdentity(program media.Program) string {
 	parts := make([]string, 0, len(program.Inputs)+len(program.Tracks)+len(program.Offsets)+1)
 	for _, input := range program.Inputs {
-		inputURL := input.URL.String()
-		if redactURLSecrets {
-			u := input.URL.Clone()
-			u.User, u.RawQuery, u.Fragment = nil, "", ""
-			inputURL = u.String()
-		}
 		parts = append(parts, fmt.Sprintf("input:%s=%s#%s:%s:%t",
-			input.ID, inputURL, input.Representation, input.ContentType, input.RequiresRelaxedInput))
+			input.ID, input.URL, input.Representation, input.ContentType, input.RequiresRelaxedInput))
 	}
 	for _, track := range program.Tracks {
 		parts = append(parts, fmt.Sprintf("track:%s=%s:%d:%t",
@@ -118,9 +103,6 @@ func programIdentity(program media.Program, redactURLSecrets bool) string {
 		program.ClockInput, program.EndPolicy, strings.Join(offsets, ",")))
 	return strings.Join(parts, "|")
 }
-
-// key leaves Try out: the same link on the same terms is the same attempt.
-func (a Attempt) key() string { return a.identify(false).String() }
 
 // reading binds a resolution to the attempt with a fetch plan derived for its program.
 func (a Attempt) reading(r source.Resolution, deadline time.Duration) Attempt {

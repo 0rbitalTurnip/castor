@@ -77,12 +77,8 @@ func TestWhatForcesAVideoReEncode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decideVideo: %v", err)
 			}
-			reasons := make([]Reason, 0, len(refused))
-			for _, r := range refused {
-				reasons = append(reasons, r.Reason)
-			}
-			if !slices.Equal(reasons, tt.want) {
-				t.Errorf("reasons = %v, want %v", reasons, tt.want)
+			if !slices.Equal(refused, tt.want) {
+				t.Errorf("reasons = %v, want %v", refused, tt.want)
 			}
 			if enc, ok := track.Encode(); ok && (enc.MaxHeight != in.MaxHeight || enc.SubtitleTextFile != tt.burnIn) {
 				t.Errorf("re-encode carries ceiling %d and burn-in %q, want %d and %q", enc.MaxHeight, enc.SubtitleTextFile, in.MaxHeight, tt.burnIn)

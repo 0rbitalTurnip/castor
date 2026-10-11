@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"time"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/codec"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/deliver"
-	"github.com/stupside/castor/services/mediaserver/internal/cast/fetch"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/health"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/transcode"
 	"github.com/stupside/castor/services/mediaserver/internal/ffmpeg"
@@ -22,7 +20,6 @@ type pull struct {
 	pcm    io.ReadCloser
 	pcmOut *io.PipeWriter
 
-	pace  float64
 	floor codec.Plan
 	spool *deliver.Spool
 	proc  *ffmpeg.Process
@@ -37,8 +34,6 @@ var _ health.Producer = (*pull)(nil)
 // pullSpec is everything one upstream read starts with.
 type pullSpec struct {
 	ffmpegPath string
-	program    media.Program
-	policy     fetch.Plan
 	source     transcode.ProgramSource
 	probe      media.ProbeInfo
 	spoolPath  string
@@ -68,20 +63,8 @@ func startPull(ctx context.Context, spec pullSpec) (*pull, error) {
 		}
 		return nil, err
 	}
-	p := &pull{pcm: pcm, pcmOut: pcmOut, pace: spec.policy.Pace(), floor: spec.floor, spool: sp, proc: proc, done: make(chan struct{})}
+	p := &pull{pcm: pcm, pcmOut: pcmOut, floor: spec.floor, spool: sp, proc: proc, done: make(chan struct{})}
 
-	produced := spec.floor.Encoded()
-	// NewProgramSource refused every program Validate rejects, so the primary is present.
-	primary, _ := spec.program.PrimaryInput()
-	slog.InfoContext(ctx, "upstream pull started",
-		"pcm", pcmOut != nil,
-		"reencode_video", produced.Video,
-		"reencode_audio", produced.Audio,
-		"source", primary.URL,
-		"header_keys", spec.program.HeaderKeys(),
-	)
-
-	go p.logProgress(ctx)
 	go p.run(ctx)
 	return p, nil
 }
@@ -119,11 +102,14 @@ func (p *pull) run(ctx context.Context) {
 	defer close(p.done)
 
 	_, err := io.Copy(p.spool, p.proc.Stdout)
+	if err != nil {
+		// A reader nobody drains blocks on its pipe, so Wait would never return.
+		p.proc.Kill()
+	}
 	// A clean exit is not a complete read: the demuxer skips or truncates media and still exits 0.
 	err = cmp.Or(err, p.proc.Wait(), p.proc.SilentFailure())
 
 	if err != nil && ctx.Err() == nil {
-		p.proc.LogStderrTail(ctx, "puller ffmpeg stderr")
 		err = fmt.Errorf("upstream pull: %w", err)
 	} else if ctx.Err() != nil {
 		err = ctx.Err()
@@ -137,41 +123,6 @@ func (p *pull) run(ctx context.Context) {
 	if err == nil {
 		slog.InfoContext(ctx, "upstream pull complete", "spooled_bytes", p.spool.Size())
 	}
-}
-
-func (p *pull) logProgress(ctx context.Context) {
-	const interval = 10 * time.Second
-	tick := time.NewTicker(interval)
-	defer tick.Stop()
-	var last int64
-	lastAt := time.Now()
-	for {
-		select {
-		case <-p.done:
-			return
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			size := p.spool.Size()
-			sample := p.Progress()
-			now := time.Now()
-			slog.InfoContext(ctx, "pull progress",
-				"spooled_bytes", size,
-				"rate_bytes_per_sec", bytesPerSecond(size-last, now.Sub(lastAt)),
-				"media_position", sample.Position.Round(time.Second),
-				"speed", float64(sample.Speed),
-				"readrate", p.pace,
-			)
-			last, lastAt = size, now
-		}
-	}
-}
-
-func bytesPerSecond(delta int64, elapsed time.Duration) int64 {
-	if elapsed <= 0 {
-		return 0
-	}
-	return int64(float64(delta) / elapsed.Seconds())
 }
 
 // Progress is the sample the process keeps of its own -progress feed (see ffmpeg.Process.Progress).

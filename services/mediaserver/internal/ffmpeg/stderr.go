@@ -12,15 +12,22 @@ import (
 	"sync"
 )
 
-// stderrTailCapacity bounds retained lines: startup burst (~20) plus two minutes of progress.
-const stderrTailCapacity = 128
+// stderrTailCapacity bounds the retained complaints; only the last few ever reach a message.
+const stderrTailCapacity = 32
 
 type Evidence struct {
 	// ExitStatus is the process exit code (noExitStatus = not reaped or castor killed it).
 	ExitStatus int
 
-	// Lines are the most recent stderr lines, kept even while the process runs.
+	// Lines are the most recent complaints on stderr (warning and worse), kept even while the process runs.
 	Lines []string
+}
+
+// isComplaint is a line ffmpeg flagged warning or worse; -loglevel level puts the tag after any "[context @ address] ".
+func isComplaint(line string) bool {
+	return slices.ContainsFunc([]string{"[warning] ", "[error] ", "[fatal] ", "[panic] "}, func(tag string) bool {
+		return strings.Contains(line, tag)
+	})
 }
 
 // Evidence collects what the process left behind (read after Wait for complete status).
@@ -28,12 +35,6 @@ func (p *Process) Evidence() Evidence {
 	return Evidence{
 		ExitStatus: int(p.status.Load()),
 		Lines:      p.tail.snapshot(),
-	}
-}
-
-func (p *Process) LogStderrTail(ctx context.Context, msg string) {
-	for _, line := range p.tail.snapshot() {
-		slog.WarnContext(ctx, msg, "line", line)
 	}
 }
 
@@ -63,7 +64,7 @@ func drainStderr(ctx context.Context, r io.Reader, tail *ringTail, markers *mark
 	}
 }
 
-// ringTail keeps the most recent N stderr lines (marker watch is separate; needs non-tail lines).
+// ringTail keeps the most recent complaint lines (the marker watch is separate and sees every line).
 type ringTail struct {
 	mu  sync.Mutex
 	buf []string
@@ -74,6 +75,9 @@ func newRingTail() *ringTail {
 }
 
 func (t *ringTail) Observe(line string) {
+	if !isComplaint(line) {
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if len(t.buf) == stderrTailCapacity {

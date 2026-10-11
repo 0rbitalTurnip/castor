@@ -11,8 +11,6 @@ import (
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 )
 
-// No "-c copy" keyword; decided track name goes on -c:v and -c:a (nowhere else).
-
 // axis is one decided track as the output carries it.
 type axis struct {
 	spec string // ffmpeg's stream specifier: "v" or "a"
@@ -40,17 +38,6 @@ func audioAxis(probe media.ProbeInfo, audio codec.Track[codec.AudioEncode], refu
 		a.codec, a.copying, a.encode = aenc.Codec, false, audioEncodeArgs(aenc)
 	}
 	return a
-}
-
-func decidedTracks(video codec.Track[codec.VideoEncode], audio codec.Track[codec.AudioEncode]) error {
-	if !video.Decided() || !audio.Decided() {
-		return fmt.Errorf("encode has an undecided axis (video decided: %t, audio decided: %t); a copy is a decision, not a default",
-			video.Decided(), audio.Decided())
-	}
-	if venc, ok := video.Encode(); ok && (venc.Encoder.Name == "" || venc.Encoder.Codec == "") {
-		return fmt.Errorf("video re-encode has no available encoder strategy")
-	}
-	return nil
 }
 
 func videoEncodeArgs(venc codec.VideoEncode) []string {
@@ -100,10 +87,6 @@ func (a axis) args(format container.Format) (axisArgs, error) {
 		return axisArgs{}, fmt.Errorf("copy of %q into %q on -c:%s is known not to be carriable; it should have been re-encoded",
 			a.codec, format.ContentType, a.spec)
 	}
-	if !a.copying && len(cp.Filters) > 0 {
-		return axisArgs{}, fmt.Errorf("re-encode to %q on -c:%s would carry bitstream filters %v; a repack belongs to a copy, so that row needs the copying predicate",
-			a.codec, a.spec, cp.Filters)
-	}
 	out := axisArgs{args: []string{"-c:" + a.spec, a.name}, movFlags: cp.MovFlags, outputArgs: cp.OutputArgs}
 	// ffmpeg takes the whole chain as one comma separated value.
 	if len(cp.Filters) > 0 {
@@ -142,19 +125,12 @@ func trackArgs(probe media.ProbeInfo, format container.Format, video codec.Track
 	if err != nil {
 		return nil, nil, err
 	}
-	movFlags, err := movFlagsArgs(format.Muxer, format.Tuning.MovFlags, slices.Concat(v.movFlags, a.movFlags))
-	if err != nil {
-		return nil, nil, err
-	}
-	return slices.Concat(videoFilterArgs(video), v.args, a.args), slices.Concat(v.outputArgs, a.outputArgs, movFlags), nil
+	return slices.Concat(videoFilterArgs(video), v.args, a.args), slices.Concat(v.outputArgs, a.outputArgs, movFlagsArgs(format.Tuning.MovFlags, v.movFlags, a.movFlags)), nil
 }
 
-func movFlagsArgs(muxer string, base, extra []string) ([]string, error) {
-	if len(base) == 0 && len(extra) > 0 {
-		return nil, fmt.Errorf("copy adaptation contributed movflags %v to muxer %q, which declares none", extra, muxer)
+func movFlagsArgs(base []string, extra ...[]string) []string {
+	if flags := slices.Concat(append([][]string{base}, extra...)...); len(flags) > 0 {
+		return []string{"-movflags", "+" + strings.Join(flags, "+")}
 	}
-	if flags := slices.Concat(base, extra); len(flags) > 0 {
-		return []string{"-movflags", "+" + strings.Join(flags, "+")}, nil
-	}
-	return nil, nil
+	return nil
 }

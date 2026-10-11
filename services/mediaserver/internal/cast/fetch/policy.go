@@ -75,10 +75,6 @@ const segmentOpenRetries = 3
 
 // Policy is how one input is fetched: how long a read may stall, how often a segment is retried, and how fast.
 type Policy struct {
-	// Name and Why identify the row this came from.
-	Name string
-	Why  string
-
 	// Deadline is how long ONE read may stall before ffmpeg abandons it and reconnects (-rw_timeout).
 	Deadline time.Duration
 

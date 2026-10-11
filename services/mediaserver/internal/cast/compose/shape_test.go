@@ -48,7 +48,7 @@ func TestAHandoffOnlyWhenEverythingChecks(t *testing.T) {
 			}
 			shape := Shape{Device: caps, Program: program, Height: tt.height, MaxHeight: tt.maxHeight}
 			if got := shape.handoff(); got != tt.want {
-				t.Errorf("handoff() = %v, want %v (shape: %s)", got, tt.want, shape)
+				t.Errorf("handoff() = %v, want %v", got, tt.want)
 			}
 		})
 	}

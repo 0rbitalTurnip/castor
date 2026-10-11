@@ -23,7 +23,7 @@ func (f fakeLead) Done() bool         { return f.done }
 func TestWaitForPlayableHoldsUntilTheTranscriptionLeads(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// Pace omitted: starving verdict would confuse the assertion.
-		buf := gateFixture(t, 0)
+		buf := gateFixture(t)
 		buf.burn = &fakeBurn{lead: &fakeLead{latest: 1}}
 		if _, err := buf.reader.spool.Write(make([]byte, 4<<20)); err != nil {
 			t.Fatal(err)
@@ -58,8 +58,8 @@ type stoppedDevice struct {
 
 func (s stoppedDevice) Handed() (int64, time.Time) { return 0, s.last }
 
-// gateFixture is a buffered read over an empty spool, granted pace.
-func gateFixture(t *testing.T, pace float64) *buffered {
+// gateFixture is a buffered read over an empty spool.
+func gateFixture(t *testing.T) *buffered {
 	t.Helper()
 	sp, err := deliver.NewSpool(filepath.Join(t.TempDir(), "spool.ts"))
 	if err != nil {
@@ -71,6 +71,5 @@ func gateFixture(t *testing.T, pace float64) *buffered {
 		proc:  finished(t),
 		spool: sp,
 		done:  make(chan struct{}),
-		pace:  pace,
 	}}
 }

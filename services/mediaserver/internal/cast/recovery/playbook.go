@@ -7,7 +7,7 @@ import (
 	"github.com/stupside/castor/services/mediaserver/internal/cast/health"
 )
 
-// playbook is each fault kind's recoveries, cheapest first; switching candidate always comes last.
+// playbook is each fault kind's recoveries, cheapest first; switching candidate last; a kind absent here has none.
 var playbook = map[kind][]strategy{
 	// Nothing about this link was established, so nothing on it is worth changing.
 	unreachable: {switchCandidate},
@@ -15,26 +15,17 @@ var playbook = map[kind][]strategy{
 	// A link that went silent may have rate-limited the opening burst, so it is asked once more at playback pace.
 	sourceStalled: {relaxRead, switchCandidate},
 
-	// The device is gone from the cast already, and no attempt resumes mid-program.
-	starved: nil,
-
 	// A slower pace would not make this link faster; the next one may be.
 	tooSlow: {switchCandidate},
 
 	// Decoding comes first; a bitstream this one cannot copy may still copy from another link.
 	copyBrokeUpstream: {decodeAxis, switchCandidate},
 
-	// Nothing at the far end to send anything to.
-	deviceGone: nil,
-
 	// A device refusing the URL is served instead; the next link, in case the source is the problem.
 	deviceRefused: {serveInstead, switchCandidate},
 
 	// The delivery lost the artifact, not the reader, so decoding would answer nothing.
 	producedNothing: {switchCandidate},
-
-	// An unknown failure offers no recovery: inventing one wastes the viewer's time.
-	unclassified: nil,
 }
 
 // revision is the attempt a strategy offers; offering nothing is ordinary.

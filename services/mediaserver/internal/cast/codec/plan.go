@@ -34,7 +34,7 @@ type Inputs struct {
 type Plan struct {
 	Video    Track[VideoEncode]
 	Audio    Track[AudioEncode]
-	Refusals []Refusal
+	Refusals []Reason
 }
 
 // Encoded returns which halves of the program this plan produces rather than passes through.

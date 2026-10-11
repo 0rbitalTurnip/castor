@@ -81,7 +81,7 @@ func judged(k health.Kind, reached health.Phase, h health.Vitals) Outcome {
 var delivered = Outcome{Evidence: Evidence{Reached: health.Delivered}}
 
 // observed is a run that got little done: 33KB and 1s of media in 30s.
-var observed = health.Vitals{Landed: 33088, Position: time.Second, Speed: 0.159, Samples: 4}
+var observed = health.Vitals{Landed: 33088, Position: time.Second, Samples: 4}
 
 func link(t *testing.T, raw string) *source.Stream {
 	t.Helper()
@@ -225,8 +225,8 @@ func TestCastSwitchesToTheNextLinkOnItsOwnLadder(t *testing.T) {
 	if second.Rendition.Bitrate != 1200000 || len(second.Origin.Renditions) != 2 {
 		t.Errorf("second attempt carries rung %d over %d renditions, want the new link's own ladder", second.Rendition.Bitrate, len(second.Origin.Renditions))
 	}
-	if got := second.Fetch.Primary(second.Program).Name; got != "segment-in-band" {
-		t.Errorf("second attempt reads on %q, want the policy of the new link's own framing", got)
+	if got := second.Fetch[second.Program.ClockInput].Deadline; got == 0 {
+		t.Errorf("second attempt reads with no deadline, want the policy of the new link's own framing")
 	}
 }
 
@@ -245,7 +245,7 @@ func TestCastRelaxesAStalledReadBeforeAbandoningTheLink(t *testing.T) {
 	if second.candidate != 0 {
 		t.Errorf("the second attempt changed link before asking the first one politely")
 	}
-	if pace := second.Fetch.Primary(second.Program).Pace; pace.Realtime != 1 || pace.Burst != 0 {
+	if pace := second.Fetch[second.Program.ClockInput].Pace; pace.Realtime != 1 || pace.Burst != 0 {
 		t.Errorf("the relaxed read is paced %+v, want playback pace with no burst", pace)
 	}
 	if run.seen[2].candidate != 1 {
@@ -346,7 +346,7 @@ func TestCastEndsWithTheCancellationRatherThanAFault(t *testing.T) {
 	}
 }
 
-func TestTheRefusalNamesWhatWasTriedAndItsMeasurements(t *testing.T) {
+func TestTheRefusalNamesWhatWasTried(t *testing.T) {
 	sole := source.Origin{
 		Renditions: []source.Rendition{rung(t, "https://cdn.example/2160.m3u8", 6941000, 2160)},
 		Segmented:  true,
@@ -365,7 +365,7 @@ func TestTheRefusalNamesWhatWasTriedAndItsMeasurements(t *testing.T) {
 		t.Errorf("refused %s on candidate %d having tried %v, want %s on candidate 1 having tried [%s]",
 			f.kind, f.attempt.candidate, f.tried, unreachable, switchCandidate.action)
 	}
-	for _, want := range []string{"landed=0", "2h1m55s", "candidate 2 of 2", "already tried: " + string(switchCandidate.action)} {
+	for _, want := range []string{"already tried: " + string(switchCandidate.action)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal %q does not carry %q", err, want)
 		}

@@ -59,8 +59,11 @@ func newCast(parent context.Context, id string, reach *url.URL, caster Caster, s
 	c.ctx = castlog.Into(ctx, c.logs)
 	c.machine = c.lifecycle()
 	c.now = latest.New(view{status: &castorv1.CastStatus{State: &castorv1.CastStatus_Measuring{Measuring: &castorv1.MeasuringStatus{}}}})
-	time.AfterFunc(undriven, func() { c.end(eventAbandon, errUndriven) })
-	context.AfterFunc(ctx, func() { c.end(eventAbandon, outcome(ctx, nil)) })
+	abandon := time.AfterFunc(undriven, func() { c.end(eventAbandon, errUndriven) })
+	context.AfterFunc(ctx, func() {
+		abandon.Stop()
+		c.end(eventAbandon, outcome(ctx, nil))
+	})
 	return c
 }
 

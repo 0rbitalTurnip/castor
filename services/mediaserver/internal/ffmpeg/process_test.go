@@ -14,8 +14,8 @@ import (
 )
 
 func TestWaitDoesNotOutrunTheStderrDrain(t *testing.T) {
-	const last = "castor-final-stderr-line"
-	script := "sleep 0.2; i=0; while [ $i -lt 5000 ]; do echo \"line $i\" >&2; i=$((i+1)); done; echo " + last + " >&2"
+	const last = "[error] castor-final-stderr-line"
+	script := "sleep 0.2; i=0; while [ $i -lt 5000 ]; do echo \"[warning] line $i\" >&2; i=$((i+1)); done; echo " + last + " >&2"
 
 	proc, err := Start(t.Context(), "/bin/sh", Command{Args: []string{"-c", script}}, Options{})
 	if err != nil {

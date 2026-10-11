@@ -145,7 +145,6 @@ func TestOnlyAnEncodeThatWouldRewriteItsSpoolUnchangedIsVerbatim(t *testing.T) {
 		{"another container", EncodeOptions{Input: piped, Format: mp4Format, Video: codec.CopyVideo(), Audio: codec.CopyAudio()}, false},
 		{"a segmented delivery", EncodeOptions{Input: piped, Format: segmentedTS, Video: codec.CopyVideo(), Audio: codec.CopyAudio()}, false},
 		{"the source rather than the spool", EncodeOptions{Input: FromSource(src), Format: mpegtsFormat, Video: codec.CopyVideo(), Audio: codec.CopyAudio()}, false},
-		{"no decision", EncodeOptions{Input: piped, Format: mpegtsFormat}, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.opts.Verbatim(); got != tt.want {
@@ -162,8 +161,6 @@ func TestIllegalCommandsAreRefused(t *testing.T) {
 		opts EncodeOptions
 	}{
 		{"no input", EncodeOptions{Format: mpegtsFormat, Video: codec.CopyVideo(), Audio: aacAudio}},
-		{"an undecided axis", EncodeOptions{Input: piped, Format: mpegtsFormat, Video: codec.CopyVideo()}},
-		{"a re-encode naming no encoder", EncodeOptions{Input: piped, Format: mpegtsFormat, Audio: aacAudio, Video: codec.Encode(codec.VideoEncode{Maxrate: "4M"})}},
 		{"a copy the container refuses", EncodeOptions{Input: piped, Format: mpegtsFormat, Probe: media.ProbeInfo{VideoCodec: media.CodecH264, AudioCodec: media.CodecFLAC}, Video: codec.CopyVideo(), Audio: codec.CopyAudio()}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -256,10 +253,10 @@ func mustPullArgs(t *testing.T, opts PullOptions) []string {
 
 func TestOnlyABinaryThatHoldsALaggingReadIsToldHowToCatchUp(t *testing.T) {
 	live := fetch.Pace{Realtime: 1, Catchup: 2}
-	if got := strings.Join(paceArgs(live, ffmpeg.Binary{Catchup: true}), " "); !strings.Contains(got, "-readrate_catchup 2.0") {
+	if got := strings.Join(paceArgs(live, true), " "); !strings.Contains(got, "-readrate_catchup 2.0") {
 		t.Errorf("pace = %q, want the catch-up rate for a binary that needs it", got)
 	}
-	if got := strings.Join(paceArgs(live, ffmpeg.Binary{}), " "); strings.Contains(got, "readrate_catchup") {
+	if got := strings.Join(paceArgs(live, false), " "); strings.Contains(got, "readrate_catchup") {
 		t.Errorf("pace = %q, an older binary rejects a flag it catches up without", got)
 	}
 }

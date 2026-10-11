@@ -39,7 +39,7 @@ func (p linkProber) Probe(ctx context.Context) (media.ProbeInfo, media.Reach, er
 		args = append(args, ffmpeg.HLSTolerances(0)...)
 	}
 
-	slog.DebugContext(ctx, "running ffprobe", "url", l.URL.String(), "header_count", len(l.Headers))
+	slog.DebugContext(ctx, "running ffprobe", "host", l.URL.Host, "header_count", len(l.Headers))
 
 	info, reach, err := pass{
 		ffprobePath: p.ffprobePath,
@@ -52,7 +52,7 @@ func (p linkProber) Probe(ctx context.Context) (media.ProbeInfo, media.Reach, er
 	}
 	if info.ContentType == "" {
 		slog.DebugContext(ctx, "unrecognised container; the source will be read rather than handed over",
-			"url", l.URL.String())
+			"host", l.URL.Host)
 	}
 	return info, reach, nil
 }

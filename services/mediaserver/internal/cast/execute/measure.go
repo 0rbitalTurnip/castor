@@ -23,7 +23,7 @@ func measure(ctx context.Context, subject string, p media.Prober) facts {
 	// Reach separation (refused vs. unreached) costs the same re-encode by cast time.
 	info, _, err := p.Probe(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "castor could not measure this cast's tracks; every copy decision below falls back to a re-encode, and the read is where a dead link will say so",
+		slog.WarnContext(ctx, "probe failed, so the cast re-encodes",
 			"subject", subject, "error", err)
 	}
 	return facts{probe: info, measured: err == nil}

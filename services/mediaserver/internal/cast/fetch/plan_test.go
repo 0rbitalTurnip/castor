@@ -17,8 +17,8 @@ func TestForProgramDerivesEveryInputIndependently(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := ForProgram(program, 17*time.Second)
-	if plan["video"].Name != "segment-fragile" || plan["audio"].Name != "live-edge" {
-		t.Errorf("policies = %s, want fragile video and live audio", plan)
+	if plan["video"].Deadline != 0 || plan["audio"].Deadline != 17*time.Second {
+		t.Errorf("deadlines = %s and %s, want a fragile video and a live audio", plan["video"].Deadline, plan["audio"].Deadline)
 	}
 	if got := plan.Pace(); got != 1 {
 		t.Errorf("combined pace = %gx, want the slowest input at 1x", got)

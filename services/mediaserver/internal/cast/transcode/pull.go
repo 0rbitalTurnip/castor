@@ -67,9 +67,6 @@ func pcmOutputArgs(opts PullOptions) []string {
 }
 
 func PullArgs(opts PullOptions) (ffmpeg.Command, error) {
-	if err := decidedTracks(opts.Video, opts.Audio); err != nil {
-		return ffmpeg.Command{}, err
-	}
 	// A stream copy on each axis, or the floor encode the spool container needs.
 	codecs, output, err := trackArgs(opts.Probe, SpoolFormat, opts.Video, opts.Audio)
 	if err != nil {

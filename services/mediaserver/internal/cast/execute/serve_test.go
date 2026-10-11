@@ -35,7 +35,7 @@ func (p playing) delivery() delivery { return delivery{sink: p.mech, output: p.b
 // took returns a playing buffered cast whose delivery ends as wait says.
 func took(t *testing.T, wait func(ctx context.Context) error) playing {
 	t.Helper()
-	return playing{buf: gateFixture(t, 0), dev: observedDevice{wait: blocking}, mech: &fakeMechanism{wait: wait}}
+	return playing{buf: gateFixture(t), dev: observedDevice{wait: blocking}, mech: &fakeMechanism{wait: wait}}
 }
 
 // blocking is a delivery that never finishes.
@@ -159,7 +159,7 @@ func TestADeliveryPublishesItsOwnArtifactsAndNothingElseOfTheCasts(t *testing.T)
 
 // TestARelayedCastIsOpenedOverItsRead: with no encoder, the read is the producer whose end the opening judges.
 func TestARelayedCastIsOpenedOverItsRead(t *testing.T) {
-	s, buf := servingPipeline(t, ""), gateFixture(t, 0)
+	s, buf := servingPipeline(t, ""), gateFixture(t)
 	buf.reader.spool.CloseWrite(nil)
 	close(buf.reader.done)
 	s.cast.Device = observedDevice{wait: blocking}
@@ -180,7 +180,7 @@ func TestARelayedCastIsOpenedOverItsRead(t *testing.T) {
 // TestARelayedCastFailsWithItsRead: the read writes the served bytes, so its failure is the cast's as an encoder's was.
 func TestARelayedCastFailsWithItsRead(t *testing.T) {
 	failed := errors.New("upstream pull: the origin refused a segment on every retry")
-	s, buf := servingPipeline(t, ""), gateFixture(t, 0)
+	s, buf := servingPipeline(t, ""), gateFixture(t)
 	buf.reader.err = failed
 	buf.reader.spool.CloseWrite(failed)
 	close(buf.reader.done)

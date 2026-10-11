@@ -1,9 +1,6 @@
 package compose
 
 import (
-	"cmp"
-	"fmt"
-
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 )
 
@@ -44,22 +41,6 @@ func (s Shape) handoff() bool {
 	return s.Device.SelfFetch && s.Program.SelfFetchable() &&
 		s.Device.AcceptsContainer(primary.ContentType) && measured &&
 		canPlay(s.Device, probe) && s.MaxHeight.Admits(s.Height)
-}
-
-// String is the shape as the composition line logs it.
-func (s Shape) String() string {
-	sourceContentType := "unknown"
-	if primary, ok := s.Program.PrimaryInput(); ok {
-		sourceContentType = cmp.Or(primary.ContentType, "unknown")
-	}
-	return fmt.Sprintf("self_fetch=%v served_container=%s source_content_type=%s source_self_fetchable=%v source_header_keys=%v source_height=%d max_height=%d delivery=%s",
-		s.Device.SelfFetch,
-		cmp.Or(s.Device.ServedContainer, "none"),
-		sourceContentType,
-		s.Program.SelfFetchable(),
-		s.Program.HeaderKeys(),
-		s.Height, s.MaxHeight,
-		cmp.Or(s.Delivery, DeliveryAuto))
 }
 
 // canPlay reports whether the whole measured program is safe to hand over: HDR is never assumed to engage.

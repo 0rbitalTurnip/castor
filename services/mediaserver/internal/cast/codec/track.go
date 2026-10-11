@@ -5,7 +5,7 @@ import (
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 )
 
-// copyName is "-c copy" on the command line (unexported: copying leaves this package through Name).
+// copyName is the codec name "-c" takes to copy.
 const copyName = "copy"
 
 // encode is the re-encode one half of a program can be given.
@@ -14,20 +14,14 @@ type encode interface {
 	name() string
 }
 
-// Track is one half of an encode: a stream copy or a re-encode (not the zero value).
-type Track[E encode] struct {
-	decided bool
-	enc     *E
-}
+// Track is one half of an encode: a re-encode, or a stream copy when it has none.
+type Track[E encode] struct{ enc *E }
 
-func CopyVideo() Track[VideoEncode] { return Track[VideoEncode]{decided: true} }
+func CopyVideo() Track[VideoEncode] { return Track[VideoEncode]{} }
 
-func CopyAudio() Track[AudioEncode] { return Track[AudioEncode]{decided: true} }
+func CopyAudio() Track[AudioEncode] { return Track[AudioEncode]{} }
 
-func Encode[E encode](e E) Track[E] { return Track[E]{decided: true, enc: &e} }
-
-// Decided reports whether any decision was taken for this half (false only for the zero value).
-func (t Track[E]) Decided() bool { return t.decided }
+func Encode[E encode](e E) Track[E] { return Track[E]{enc: &e} }
 
 // Encode returns the re-encode parameters, with ok false for a stream copy.
 func (t Track[E]) Encode() (E, bool) {

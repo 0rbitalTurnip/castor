@@ -43,23 +43,13 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-// A fault quotes what the reader complained about, not whatever it chattered last.
-func TestTheFaultQuotesTheReadersComplaintsBeforeItsChatter(t *testing.T) {
-	lines := []string{
-		"[verbose] Opening 'seg_23.ts' for reading",
-		"[error] Error reading HTTP response: Operation timed out",
-		"[warning] Failed to open segment 24 of playlist 0",
-		"[verbose] Opening 'seg_24.ts' for reading",
-		"[verbose] Starting connection attempt",
-		"[verbose] Successfully connected",
-		"[verbose] HLS request for url 'seg_24.ts'",
+// A fault quotes only the last few complaints the reader printed.
+func TestTheFaultQuotesTheLastFewComplaints(t *testing.T) {
+	lines := []string{"[error] a", "[error] b", "[error] c", "[error] d", "[warning] e"}
+	if got := tells(lines); len(got) != 4 || got[0] != "[error] b" || got[3] != "[warning] e" {
+		t.Errorf("tells = %q, want the last four", got)
 	}
-	got := tells(lines)
-	if len(got) != 2 || got[0] != lines[1] || got[1] != lines[2] {
-		t.Errorf("tells = %q, want the error and the warning alone", got)
-	}
-	chatter := lines[3:]
-	if got := tells(chatter); len(got) != 4 || got[0] != chatter[len(chatter)-4] {
-		t.Errorf("tells over chatter alone = %q, want its last four lines", got)
+	if got := tells(lines[:2]); len(got) != 2 {
+		t.Errorf("tells over two lines = %q, want both", got)
 	}
 }

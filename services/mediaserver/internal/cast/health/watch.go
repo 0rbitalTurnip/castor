@@ -30,15 +30,12 @@ func Watch(ctx context.Context, m Monitor) error {
 				"gate", m.Subject,
 				"rule", r.name,
 				"waited", time.Since(t.start).Round(time.Millisecond),
-				"landed_bytes", h.Landed,
-				"rate", h.rate,
-				"transcribed_lead_seconds", int(h.lead),
 			)
 			return nil
 		case revise, abandon:
 			return t.fault(ctx, r, act, h)
 		case hold:
-			t.hold(ctx, r, h)
+			t.hold(ctx, r)
 		case release:
 			t.release(ctx, r, h)
 		default:
@@ -56,9 +53,6 @@ func Watch(ctx context.Context, m Monitor) error {
 // Fault is a verdict that ended a watch; recovery keys on its Kind.
 type Fault struct {
 	Kind Kind
-	// why is the reasoning of the row that reached it.
-	why string
-
 	// Revise is a verdict reached before the device held the URL, so the attempt may change.
 	Revise bool
 
@@ -79,18 +73,16 @@ type Fault struct {
 func DeviceStarved(subject string, made media.Progress, handed int64) *Fault {
 	return &Fault{
 		Kind:    Starved,
-		why:     "the device ran out of media before the upstream read finished",
 		Subject: subject,
-		Vitals:  Vitals{Landed: made.Bytes, Position: made.Position, Speed: made.Speed, handed: handed},
+		Vitals:  Vitals{Landed: made.Bytes, Position: made.Position, handed: handed},
 	}
 }
 
 func (f *Fault) Error() string {
-	msg := fmt.Sprintf("%s: %s (%s)", f.Subject, f.why, f.Vitals)
 	if f.Err != nil {
-		return msg + ": " + f.Err.Error()
+		return fmt.Sprintf("%s: %s: %s", f.Subject, f.Kind, f.Err)
 	}
-	return msg
+	return fmt.Sprintf("%s: %s", f.Subject, f.Kind)
 }
 
 func (f *Fault) Unwrap() error { return f.Err }
@@ -113,13 +105,14 @@ type tracker struct {
 	// samples counts the speeds the producer stated, not the N/A it prints before.
 	sample  media.Progress
 	samples int
-	fresh   bool
 
 	// pausedAt is when the device was last held, zero while it plays; held is every hold before it.
 	pausedAt time.Time
 	held     time.Duration
 	// unholdable is a device that refused to pause, judged from then on as one that cannot be held.
 	unholdable bool
+	// refusedResume is a resume the device refused, which is warned of once however often it is retried.
+	refusedResume bool
 
 	reported time.Time
 }
@@ -139,12 +132,11 @@ func (t *tracker) read() Vitals {
 
 	if tm := t.m.Telemetry; tm != nil {
 		sample := tm.Progress()
-		t.fresh = sample != t.sample
-		if t.fresh && sample.Speed > 0 {
+		if sample != t.sample && sample.Speed > 0 {
 			t.samples++
 		}
 		t.sample = sample
-		h.Position, h.Speed, h.Samples = sample.Position, sample.Speed, t.samples
+		h.Position, h.Samples = sample.Position, t.samples
 		h.rate = t.pace(now, h.Position)
 		if since := now.Sub(t.start); since > 0 {
 			h.fill = h.Position.Seconds() / since.Seconds()
@@ -221,32 +213,35 @@ func (t *tracker) pace(now time.Time, position time.Duration) float64 {
 }
 
 // hold pauses the device; one that will not be held is judged from then on as one that cannot be.
-func (t *tracker) hold(ctx context.Context, r rule, h Vitals) {
+func (t *tracker) hold(ctx context.Context, r rule) {
 	if err := t.m.Transport.Pause(ctx); err != nil {
 		t.unholdable = true
-		slog.WarnContext(ctx, "the device would not pause, so it is left to play out what it has", "gate", t.m.Subject, "rule", r.name, "error", err, "health", h.String())
+		slog.WarnContext(ctx, "the device would not pause, so it is left to play out what it has", "gate", t.m.Subject, "rule", r.name, "error", err)
 		return
 	}
 	t.pausedAt = time.Now()
-	slog.InfoContext(ctx, "device held", "gate", t.m.Subject, "rule", r.name, "why", r.why, "health", h.String())
+	slog.InfoContext(ctx, "device held", "gate", t.m.Subject, "rule", r.name)
 }
 
 // release resumes a held device; a refusal is retried on the next tick, since the rule still holds.
 func (t *tracker) release(ctx context.Context, r rule, h Vitals) {
 	if err := t.m.Transport.Resume(ctx); err != nil {
-		slog.WarnContext(ctx, "the device would not resume", "gate", t.m.Subject, "rule", r.name, "error", err, "health", h.String())
+		if !t.refusedResume {
+			slog.WarnContext(ctx, "the device would not resume", "gate", t.m.Subject, "rule", r.name, "error", err)
+		}
+		t.refusedResume = true
 		return
 	}
+	t.refusedResume = false
 	t.held += time.Since(t.pausedAt)
 	t.pausedAt = time.Time{}
-	slog.InfoContext(ctx, "device released", "gate", t.m.Subject, "rule", r.name, "why", r.why, "held", h.sincePause.Round(time.Millisecond), "health", h.String())
+	slog.InfoContext(ctx, "device released", "gate", t.m.Subject, "rule", r.name, "held", h.sincePause.Round(time.Millisecond))
 }
 
-// fault ends the watch in the producer's own words, logged only while it still runs.
+// fault ends the watch with the producer's own error and evidence; only an abandon is logged, a revise is the recovery's to say.
 func (t *tracker) fault(ctx context.Context, r rule, act action, h Vitals) error {
 	f := &Fault{
 		Kind:    r.kind,
-		why:     r.why,
 		Revise:  act == revise,
 		Subject: t.m.Subject,
 		Vitals:  h,
@@ -256,24 +251,10 @@ func (t *tracker) fault(ctx context.Context, r rule, act action, h Vitals) error
 			f.Err = tm.Err()
 		}
 		f.Evidence = t.m.Producer.Evidence()
-		if !h.ended {
-			if len(f.Evidence) > 0 {
-				for _, line := range f.Evidence {
-					slog.WarnContext(ctx, "producer stderr", "gate", t.m.Subject, "line", line)
-				}
-			} else {
-				slog.WarnContext(ctx, "the producer emitted no stderr: the connection was accepted and neither bytes nor warnings arrived (silent upstream)", "gate", t.m.Subject)
-			}
-		}
 	}
-	slog.WarnContext(ctx, "cast abandoned",
-		"gate", t.m.Subject,
-		"phase", t.m.Phase.String(),
-		"verdict", r.kind.String(),
-		"rule", r.name,
-		"revisable", f.Revise,
-		"health", h.String(),
-	)
+	if act == abandon {
+		slog.WarnContext(ctx, "cast abandoned", "gate", t.m.Subject, "verdict", r.kind.String(), "rule", r.name)
+	}
 	return f
 }
 
@@ -285,15 +266,9 @@ func (t *tracker) report(ctx context.Context, r rule, h Vitals) {
 	t.reported = time.Now()
 	slog.InfoContext(ctx, "watch",
 		"gate", t.m.Subject,
-		"phase", t.m.Phase.String(),
-		"verdict", r.kind.String(),
 		"rule", r.name,
-		"landed_bytes", h.Landed,
 		"media_position", h.Position.Round(time.Second),
-		"rate", h.rate,
 		"ahead", h.ahead().Round(time.Second),
 		"paused", h.paused,
-		"transcribed_lead_seconds", int(h.lead),
-		"need_lead_seconds", transcriptionLead.Seconds(),
 	)
 }

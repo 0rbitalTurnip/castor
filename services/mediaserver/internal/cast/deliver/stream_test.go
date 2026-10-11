@@ -6,8 +6,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -304,4 +307,31 @@ func head(t *testing.T, srv *Stream) int {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
+}
+
+// A writer that cannot take a deadline is warned about once, not on every chunk.
+func TestAMissingWriteDeadlineIsWarnedOnce(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	sp := newTestSpool(t)
+	if _, err := sp.Write(payload(3 * sendChunkSize)); err != nil {
+		t.Fatal(err)
+	}
+	sp.CloseWrite(nil)
+	done := make(chan struct{})
+	close(done)
+	s := &Stream{spool: sp, done: done, o: Opening{WriteDeadline: time.Second}}
+	tail, err := sp.TailAt(t.Context(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tail.Close()
+
+	s.send(t.Context(), httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), served{code: http.StatusOK, end: -1, total: -1}, tail, nil)
+	if got := strings.Count(logs.String(), "write deadline unavailable"); got != 1 {
+		t.Errorf("warned %d times over 3 chunks, want once", got)
+	}
 }

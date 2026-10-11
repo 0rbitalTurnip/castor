@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/codec"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/container"
@@ -84,15 +85,7 @@ func (s *pipeline) decide(caps media.Capabilities, into container.Format, facts 
 		"video_codec", decided.Video.Name(),
 		"audio_codec", decided.Audio.Name(),
 		"source_video_codec", string(facts.probe.VideoCodec),
-		"source_video_profile", facts.probe.VideoProfile,
-		"source_video_height", facts.probe.VideoHeight,
 		"source_audio_codec", string(facts.probe.AudioCodec),
-		"source_audio_channels", facts.probe.AudioChannels,
-		"measured", facts.measured,
-		"output_content_type", into.ContentType,
-		"burn_in", burnIn != "",
-		"decode", s.attempt.Decode.String(),
-		"encoded", decided.Encoded().String(),
 	)
 	logRefusals(s.ctx, decided)
 	return decided, nil
@@ -101,7 +94,7 @@ func (s *pipeline) decide(caps media.Capabilities, into container.Format, facts 
 // logRefusals states once why each axis a plan encodes is not copied.
 func logRefusals(ctx context.Context, decided codec.Plan) {
 	for _, r := range decided.Refusals {
-		slog.InfoContext(ctx, "not copied", "reason", string(r.Reason), "why", r.Why)
+		slog.InfoContext(ctx, "not copied", "reason", string(r))
 	}
 }
 
@@ -126,7 +119,9 @@ func encoderResult(ctx context.Context, proc *ffmpeg.Process) error {
 	if err == nil || ctx.Err() != nil || proc.Evidence().ExitStatus < 0 {
 		return nil
 	}
-	proc.LogStderrTail(ctx, "ffmpeg stderr")
+	if complaints := proc.Evidence().Lines; len(complaints) > 0 {
+		return fmt.Errorf("encoder: %w: %s", err, strings.Join(complaints[max(0, len(complaints)-4):], " | "))
+	}
 	return fmt.Errorf("encoder: %w", err)
 }
 

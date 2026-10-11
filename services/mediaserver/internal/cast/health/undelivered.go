@@ -13,14 +13,11 @@ type Undelivered struct {
 	Produced time.Duration
 }
 
-// Error states the shortfall in words matching the numbers.
 func (u *Undelivered) Error() string {
 	if u.Handed <= 0 {
-		return fmt.Sprintf("the device was handed none of the %s this cast produced: it accepted the stream URL and never came for a byte of the program, all of which reached nobody",
-			u.Produced.Round(time.Second))
+		return fmt.Sprintf("the device took none of the %s this cast produced", u.Produced.Round(time.Second))
 	}
-	return fmt.Sprintf("the device was handed %s of the %s this cast produced: it stopped taking the stream while castor was still serving it, so most of the program (%s) reached nobody",
-		u.Handed.Round(time.Second), u.Produced.Round(time.Second), (u.Produced - u.Handed).Round(time.Second))
+	return fmt.Sprintf("the device took %s of the %s this cast produced", u.Handed.Round(time.Second), u.Produced.Round(time.Second))
 }
 
 // handedAtLeast is the share of what a delivery made that the device must take for it to count as delivered.

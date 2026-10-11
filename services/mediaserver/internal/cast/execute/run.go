@@ -54,16 +54,13 @@ func open(parent context.Context, c Cast, a recovery.Attempt) *pipeline {
 }
 
 func (s *pipeline) play() (ran, error) {
-	row := s.compose()
-	switch row.Kind {
+	switch s.compose() {
 	case compose.Handoff:
 		return s.handoff()
-	case compose.Remux:
-		return s.remux()
 	case compose.ReadOnce:
 		return s.readOnce()
 	default:
-		return ran{}, fmt.Errorf("composition %q has no execution for kind %d", row.Name, row.Kind)
+		return s.remux()
 	}
 }
 
@@ -73,16 +70,21 @@ func (s *pipeline) handoff() (ran, error) {
 	if err := hand(s.ctx, s.cast.Device, primary.URL, primary.ContentType, true); err != nil {
 		return ran{}, err
 	}
-	slog.InfoContext(s.ctx, "playback handed off to the device")
 	return ran{reached: health.Playing}, nil
 }
 
-func (s *pipeline) remux() (ran, error) {
+// prepare is the work directory and the program with its followed timelines, which a cast castor serves starts from.
+func (s *pipeline) prepare() (string, media.Program, error) {
 	work, err := s.workdir()
 	if err != nil {
-		return ran{}, err
+		return "", media.Program{}, err
 	}
 	program, err := s.follow(s.attempt.Program)
+	return work, program, err
+}
+
+func (s *pipeline) remux() (ran, error) {
+	work, program, err := s.prepare()
 	if err != nil {
 		return ran{}, err
 	}
@@ -91,11 +93,7 @@ func (s *pipeline) remux() (ran, error) {
 }
 
 func (s *pipeline) readOnce() (ran, error) {
-	work, err := s.workdir()
-	if err != nil {
-		return ran{}, err
-	}
-	program, err := s.follow(s.attempt.Program)
+	work, program, err := s.prepare()
 	if err != nil {
 		return ran{}, err
 	}
@@ -111,7 +109,7 @@ func (s *pipeline) readOnce() (ran, error) {
 	return ran{reached: max(reading.reached, reached), reader: buf.reader}, err
 }
 
-func (s *pipeline) compose() compose.Row {
+func (s *pipeline) compose() compose.Kind {
 	shape := compose.Shape{
 		Device:    s.cast.Device.Capabilities(),
 		Program:   s.attempt.Program,
@@ -119,9 +117,9 @@ func (s *pipeline) compose() compose.Row {
 		Height:    s.attempt.SelfFetchHeight(),
 		MaxHeight: s.cast.MaxHeight,
 	}
-	row := compose.For(shape)
-	slog.InfoContext(s.ctx, "cast composition", "composition", row.Name, "why", row.Why, "shape", shape.String())
-	return row
+	kind := compose.For(shape)
+	slog.InfoContext(s.ctx, "cast composition", "composition", string(kind))
+	return kind
 }
 
 // workdir is where an attempt keeps its files, removed when it is released.
@@ -154,7 +152,7 @@ func (e *timelineUnreadable) Unwrap() error { return e.err }
 
 // hand points the device at target; source says whether that is the source itself rather than what castor serves.
 func hand(ctx context.Context, dev Device, target *url.URL, contentType string, source bool) error {
-	slog.InfoContext(ctx, "starting playback", "url", target.String(), "content_type", contentType)
+	slog.InfoContext(ctx, "starting playback", "host", target.Host, "content_type", contentType, "handoff", source)
 	if err := dev.Play(ctx, target, contentType); err != nil {
 		return &playRefused{err: err, source: source}
 	}

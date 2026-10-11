@@ -31,8 +31,8 @@ func TestTheOutcomeCarriesWhatTheRecoveryLoopClassifies(t *testing.T) {
 	})
 
 	t.Run("a watch verdict", func(t *testing.T) {
-		verdict := &health.Fault{Kind: health.Dead, Vitals: health.Vitals{Speed: 0.159}, Evidence: []string{"404"}}
-		if e := evidence(playing, verdict, false); e.Verdict != health.Dead || e.Vitals.Speed != 0.159 || len(e.Lines) != 1 {
+		verdict := &health.Fault{Kind: health.Dead, Vitals: health.Vitals{Samples: 4}, Evidence: []string{"404"}}
+		if e := evidence(playing, verdict, false); e.Verdict != health.Dead || e.Vitals.Samples != 4 || len(e.Lines) != 1 {
 			t.Errorf("evidence = %+v, want the verdict, its measurements and its lines", e)
 		}
 	})

@@ -19,27 +19,26 @@ func Floor(ctx context.Context, in Inputs) (Plan, error) {
 }
 
 // Video half: stream copy or floor codec under VBV cap, scaled to ceiling.
-func floorVideoTrack(ctx context.Context, in Inputs) (Track[VideoEncode], []Refusal, error) {
+func floorVideoTrack(ctx context.Context, in Inputs) (Track[VideoEncode], []Reason, error) {
 	refused := refuse(videoCarriageRefusals, in)
 	if len(refused) == 0 {
 		return CopyVideo(), nil, nil
 	}
-	target := floorVideo
-	enc, ok := in.Encoders(ctx, target.codec)
+	enc, ok := in.Encoders(ctx, floorVideo.codec)
 	if !ok {
-		return Track[VideoEncode]{}, refused, fmt.Errorf("no working encoder for recovery codec %q", target.codec)
+		return Track[VideoEncode]{}, refused, fmt.Errorf("no working encoder for recovery codec %q", floorVideo.codec)
 	}
 
 	produced := VideoEncode{
 		Encoder: enc,
-		Maxrate: target.maxrate,
-		Bufsize: target.bufsize,
+		Maxrate: floorVideo.maxrate,
+		Bufsize: floorVideo.bufsize,
 		// Caps pixel rate where VBV cap cannot; prevents false slowness reports.
 		MaxHeight: in.MaxHeight,
 	}
 	// Hardware uses bitrate, software uses quality; not interchangeable.
 	if enc.Hardware {
-		produced.Bitrate = target.bitrate
+		produced.Bitrate = floorVideo.bitrate
 	} else {
 		produced.Quality = floorVideoQuality
 	}
@@ -47,7 +46,7 @@ func floorVideoTrack(ctx context.Context, in Inputs) (Track[VideoEncode], []Refu
 }
 
 // Audio half: stream copy, else surround kept in the buffer's surround codec and stereo in AAC; cannot fail.
-func floorAudioTrack(in Inputs) (Track[AudioEncode], []Refusal) {
+func floorAudioTrack(in Inputs) (Track[AudioEncode], []Reason) {
 	refused := refuse(audioCarriageRefusals, in)
 	if len(refused) == 0 {
 		return CopyAudio(), nil

@@ -1,11 +1,9 @@
 package health
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/fetch"
-	"github.com/stupside/castor/services/mediaserver/internal/media"
 )
 
 // Vitals is one reading of a watched cast: its measurements and terminal states.
@@ -16,9 +14,8 @@ type Vitals struct {
 	// sinceGrowth is how long no new media has arrived: Position when the producer states one, else Landed.
 	sinceGrowth time.Duration
 
-	// Position is the media made so far, and Speed that media per wall-clock second since the producer started.
+	// Position is the media made so far.
 	Position time.Duration
-	Speed    media.Speed
 
 	// Samples counts the speeds the producer stated, none before its first packet.
 	Samples int
@@ -39,7 +36,7 @@ type Vitals struct {
 	// overdue is a fact about the delivery's own patience, not about the producer.
 	overdue bool
 
-	// lead is how far a burn-in's transcription has committed, and leadDone whether it finished.
+	// subtitles is a burn-in cast; lead is how far its transcription has committed, and leadDone whether it finished.
 	subtitles bool
 	lead      float64
 	leadDone  bool
@@ -56,13 +53,6 @@ type Vitals struct {
 	paused     bool
 	sincePause time.Duration
 	held       time.Duration
-}
-
-func (h Vitals) String() string {
-	return fmt.Sprintf("landed=%d position=%s rate=%.3gx speed=%.4gx samples=%d since_growth=%s handed=%d since_fetch=%s ahead=%s paused=%t",
-		h.Landed, h.Position.Round(time.Second), h.rate, float64(h.Speed),
-		h.Samples, h.sinceGrowth.Round(time.Second), h.handed, h.sinceFetch.Round(time.Second),
-		h.ahead().Round(time.Second), h.paused)
 }
 
 // playable reports that there is something to hand a device.

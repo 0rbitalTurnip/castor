@@ -9,7 +9,6 @@ import (
 // silentFailure is one stderr line that means the output is not playable, or that media is missing from it.
 type silentFailure struct {
 	marker string
-	reason string
 	// lost is media the source never delivered, which a second read of the same link may still deliver.
 	lost bool
 }
@@ -19,24 +18,20 @@ var silentFailures = []silentFailure{
 	{
 		// aac_adtstoasc with ADTS input: muxer rejects every packet, output unplayable.
 		marker: "AAC bitstream not in ADTS format and extradata missing",
-		reason: "an audio repack was applied toward a container that frames its streams in band, and the muxer discarded the packets",
 	},
 	{
 		// A response shorter than its Content-Length; ffmpeg keeps what arrived and moves on.
 		marker: "Stream ends prematurely",
-		reason: "the origin cut a response short of the length it declared, so media is missing from the read",
 		lost:   true,
 	},
 	{
 		// The HLS demuxer drops a segment it could not open and carries on to exit 0.
 		marker: "failed too many times, skipping",
-		reason: "the origin refused a segment on every retry, so the read skipped media",
 		lost:   true,
 	},
 	{
 		// Exits non-zero; free to catch early.
 		marker: "Malformed AAC bitstream detected",
-		reason: "an ADTS-framed AAC track reached a container that declares its decoder configuration up front, with no repack",
 	},
 }
 
@@ -61,7 +56,7 @@ func (w *markerWatch) Observe(line string) {
 		}
 		w.mu.Lock()
 		if w.silent == nil {
-			w.silent = fmt.Errorf("ffmpeg produced unplayable output: %s (%s)", f.reason, line)
+			w.silent = fmt.Errorf("ffmpeg produced unplayable output: %s", line)
 		}
 		w.lost = w.lost || f.lost
 		w.mu.Unlock()

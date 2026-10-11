@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/stupside/castor/services/mediaserver/internal/source"
 )
@@ -31,7 +30,6 @@ func Cast(ctx context.Context, in Intent, run Runner, resolver SourceResolver) e
 	if !ok {
 		return fmt.Errorf("none of the %d links could be resolved", len(in.Candidates))
 	}
-	announce(ctx, in, a)
 
 	led := &ledger{}
 	led.admit(a)
@@ -40,7 +38,7 @@ func Cast(ctx context.Context, in Intent, run Runner, resolver SourceResolver) e
 	var tried []string
 
 	for {
-		slog.InfoContext(ctx, "attempt", "try", a.Try, "candidates", len(in.Candidates), "shape", a.String())
+		slog.InfoContext(ctx, "attempt", "try", a.Try, "candidate", a.candidate+1, "candidates", len(in.Candidates))
 		in.Turns.Attempting(a.Try)
 
 		out := run.Run(ctx, a)
@@ -50,7 +48,7 @@ func Cast(ctx context.Context, in Intent, run Runner, resolver SourceResolver) e
 			return nil
 		}
 
-		f := classify(in, a, out, tried)
+		f := classify(a, out, tried)
 		if f.kind == cancelled {
 			// The cause says why the cast was cancelled; the attempt's error is only the broken pipe that followed.
 			return cmp.Or(context.Cause(ctx), out.Err)
@@ -58,7 +56,6 @@ func Cast(ctx context.Context, in Intent, run Runner, resolver SourceResolver) e
 
 		rev := revise(ctx, in, out, f, led, resolver)
 		if !rev.offered {
-			refused(ctx, in, a, out, f, tried)
 			return f
 		}
 
@@ -82,67 +79,26 @@ func validate(in Intent) error {
 	return nil
 }
 
-func announce(ctx context.Context, in Intent, a Attempt) {
-	slog.InfoContext(ctx, "source program",
-		"candidates", len(in.Candidates),
-		"candidate", a.candidate+1,
-		"renditions", len(a.Origin.Renditions),
-		"sole", a.Origin.Sole(),
-		"segmented", a.Origin.Segmented,
-		"segment_framing", a.Origin.Framing,
-		"live", a.Origin.Live,
-		"duration", a.Origin.Duration,
-	)
-	primary := a.Fetch.Primary(a.Program)
-	slog.InfoContext(ctx, "source read policy",
-		"policy", primary.Name,
-		"why", primary.Why,
-		"inputs", a.Fetch.String(),
-		// Zero deadline is valid for some sources, not missing.
-		"read_deadline", primary.Deadline,
-		"segment_retries", primary.SegmentRetries,
-		"readrate", primary.Pace.Realtime,
-		"burst", primary.Pace.Burst,
-	)
-}
-
-func refused(ctx context.Context, in Intent, a Attempt, out Outcome, f *fault, tried []string) {
-	slog.WarnContext(ctx, "cast refused",
-		"verdict", f.kind.String(),
-		"rule", f.rule,
-		"why", f.why,
-		"reached", out.Evidence.Reached.String(),
-		"health", f.evidence.Vitals.String(),
-		"candidate", a.candidate+1,
-		"candidates", len(in.Candidates),
-		"arithmetic", strings.Join(f.arithmetic(), "; "),
-		"tried", tried,
-	)
-}
-
 func revising(ctx context.Context, f *fault, rev revision) {
 	slog.WarnContext(ctx, "revising the cast",
 		"verdict", f.kind.String(),
-		"why", f.why,
+		"error", f.err,
 		"strategy", rev.strategy.action,
-		"expecting", rev.strategy.why,
-		"health", f.evidence.Vitals.String(),
-		"next", rev.attempt.String(),
 	)
 }
 
 // ledger refuses an attempt already run, so a strategy table edited wrong cannot loop.
-type ledger struct{ ran map[string]bool }
+type ledger struct{ ran map[identity]bool }
 
 // admit records a and reports whether it had not run yet.
 func (l *ledger) admit(a Attempt) bool {
-	key := a.key()
-	if l.ran[key] {
+	id := a.identify()
+	if l.ran[id] {
 		return false
 	}
 	if l.ran == nil {
-		l.ran = make(map[string]bool)
+		l.ran = make(map[identity]bool)
 	}
-	l.ran[key] = true
+	l.ran[id] = true
 	return true
 }

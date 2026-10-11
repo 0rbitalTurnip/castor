@@ -55,8 +55,6 @@ func (s *pipeline) read(work string, program media.Program) (*buffered, error) {
 	}
 	reader, err := startPull(ctx, pullSpec{
 		ffmpegPath: s.cast.FFmpegPath,
-		program:    program,
-		policy:     s.attempt.Fetch,
 		source:     source,
 		probe:      facts.probe,
 		spoolPath:  filepath.Join(work, "spool"+transcode.SpoolFormat.Extension),

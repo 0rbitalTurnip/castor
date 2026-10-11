@@ -1,8 +1,11 @@
 package health
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -152,6 +155,8 @@ type heldDevice struct {
 	holds    []time.Time
 	releases []time.Time
 	refuse   error
+	// refuseResume fails every Resume.
+	refuseResume error
 }
 
 func (d *heldDevice) Handed() (int64, time.Time) { return 1 << 20, time.Now() }
@@ -167,6 +172,9 @@ func (d *heldDevice) Pause(context.Context) error {
 func (d *heldDevice) Resume(context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.refuseResume != nil {
+		return d.refuseResume
+	}
 	d.releases = append(d.releases, time.Now())
 	return nil
 }
@@ -226,7 +234,7 @@ func TestADeviceHeldPastThePauseBudgetIsStarved(t *testing.T) {
 			t.Fatalf("Watch = %v, want a starved verdict after the pause budget", err)
 		}
 		if fault.Vitals.Position != 5*time.Second || !fault.Vitals.paused {
-			t.Errorf("the verdict carries %s, want the measurements it was reached on", fault.Vitals)
+			t.Errorf("the verdict carries %+v, want the measurements it was reached on", fault.Vitals)
 		}
 		dev.mu.Lock()
 		defer dev.mu.Unlock()
@@ -248,4 +256,24 @@ func TestADeviceThatRefusesToPauseIsJudgedUnholdable(t *testing.T) {
 			t.Fatalf("Watch = %v, want a stall once the device played out what the silent read had made", err)
 		}
 	})
+}
+
+// A device that refuses to resume is retried every tick but warned of once.
+func TestARefusedResumeIsWarnedOnce(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dev := &heldDevice{refuseResume: errors.New("UPnP 701")}
+	tr := &tracker{m: Monitor{Subject: "the playing cast", Transport: dev}, pausedAt: time.Now()}
+	for range 3 {
+		tr.release(t.Context(), rule{name: "replenished"}, Vitals{})
+	}
+	if got := strings.Count(logs.String(), "would not resume"); got != 1 {
+		t.Errorf("warned %d times over 3 refused resumes, want once", got)
+	}
+	if tr.pausedAt.IsZero() {
+		t.Error("a refused resume released the hold anyway")
+	}
 }

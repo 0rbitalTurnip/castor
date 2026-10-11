@@ -252,8 +252,8 @@ func (s *Stream) severed(ctx context.Context, r *http.Request, err error, held i
 func (s *Stream) handleStream(srvCtx context.Context, w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	stop := context.AfterFunc(srvCtx, cancel)
-	defer stop()
+	unhook := context.AfterFunc(srvCtx, cancel)
+	defer unhook()
 
 	s.writeHeaders(w)
 	if r.Method == http.MethodHead {
@@ -348,6 +348,7 @@ func (s *Stream) send(ctx context.Context, w http.ResponseWriter, r *http.Reques
 	buf := make([]byte, sendChunkSize)
 	var sent int64
 	lastWrite := time.Now()
+	deadlines := true
 	for {
 		want := buf
 		if remaining >= 0 {
@@ -355,8 +356,11 @@ func (s *Stream) send(ctx context.Context, w http.ResponseWriter, r *http.Reques
 		}
 		n, readErr := tail.Read(want)
 		if n > 0 {
-			if err := control.SetWriteDeadline(time.Now().Add(s.o.WriteDeadline)); err != nil {
-				slog.WarnContext(ctx, "stream write deadline unavailable, a client that stops reading will park this goroutine", "error", err)
+			if deadlines {
+				if err := control.SetWriteDeadline(time.Now().Add(s.o.WriteDeadline)); err != nil {
+					deadlines = false
+					slog.WarnContext(ctx, "stream write deadline unavailable, a client that stops reading will park this goroutine", "error", err)
+				}
 			}
 			if _, err := w.Write(want[:n]); err != nil {
 				s.severed(ctx, r, err, sv.start+sent, time.Since(lastWrite))

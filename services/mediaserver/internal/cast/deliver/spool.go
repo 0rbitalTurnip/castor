@@ -33,11 +33,12 @@ func NewSpool(path string) (*Spool, error) {
 
 // Write appends to the spool and wakes any blocked tails.
 func (s *Spool) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// One writer, so the disk write stays outside the lock tails and Size take.
 	n, err := s.w.Write(p)
+	s.mu.Lock()
 	s.size += int64(n)
 	s.cond.Broadcast()
+	s.mu.Unlock()
 	return n, err
 }
 
@@ -114,12 +115,9 @@ func (t *tailReader) Read(p []byte) (int, error) {
 
 	n, err := t.f.ReadAt(p, t.offset)
 	t.offset += int64(n)
+	// The file holds at least size bytes, so EOF here only means more data may arrive.
 	if err == io.EOF {
-		// More data may arrive; the next Read blocks on the cond again.
 		err = nil
-		if n == 0 {
-			return t.Read(p)
-		}
 	}
 	return n, err
 }

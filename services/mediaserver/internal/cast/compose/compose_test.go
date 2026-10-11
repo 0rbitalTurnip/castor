@@ -20,12 +20,12 @@ func TestTheCompositionADeviceGets(t *testing.T) {
 		device     media.Capabilities
 		sourceCT   string
 		preference DeliveryPreference
-		want       string
+		want       Kind
 	}{
-		{"a push-only device is read once", media.Capabilities{}, media.MP4, DeliveryAuto, "read-once"},
-		{"a self-fetching device that accepts the source is handed the URL", selfFetching, media.MP4, DeliveryAuto, "handoff"},
-		{"a rejected container is remuxed", selfFetching, media.MKV, DeliveryAuto, "remux"},
-		{"the serve preference relays what could have been handed over", selfFetching, media.MP4, DeliveryServe, "remux"},
+		{"a push-only device is read once", media.Capabilities{}, media.MP4, DeliveryAuto, ReadOnce},
+		{"a self-fetching device that accepts the source is handed the URL", selfFetching, media.MP4, DeliveryAuto, Handoff},
+		{"a rejected container is remuxed", selfFetching, media.MKV, DeliveryAuto, Remux},
+		{"the serve preference relays what could have been handed over", selfFetching, media.MP4, DeliveryServe, Remux},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			candidate := &source.Stream{
@@ -37,8 +37,8 @@ func TestTheCompositionADeviceGets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row := For(Shape{Device: tt.device, Program: program, Delivery: tt.preference}); row.Name != tt.want {
-				t.Errorf("composed %q, want %q", row.Name, tt.want)
+			if got := For(Shape{Device: tt.device, Program: program, Delivery: tt.preference}); got != tt.want {
+				t.Errorf("composed %q, want %q", got, tt.want)
 			}
 		})
 	}

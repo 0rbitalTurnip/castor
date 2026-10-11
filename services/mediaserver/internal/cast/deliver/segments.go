@@ -74,7 +74,6 @@ func OpenSegments(ctx context.Context, o Opening, dir string, producer io.Reader
 			}
 			defer control.SetWriteDeadline(time.Time{})
 		}
-		slog.InfoContext(r.Context(), "hls request", "from", r.RemoteAddr, "path", r.URL.Path)
 		// Set device headers first, then artifact's own type.
 		for k, v := range s.o.Headers {
 			w.Header().Set(k, v)

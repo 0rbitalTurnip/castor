@@ -39,11 +39,11 @@ type producer interface {
 func (s *pipeline) serve(work string, f feed, burn Burn) (health.Phase, error) {
 	opts, err := s.encode(f, burn)
 	if err != nil {
-		return 0, err
+		return health.Unstarted, err
 	}
 	d, err := s.produce(work, f, opts, burn)
 	if err != nil {
-		return 0, err
+		return health.Unstarted, err
 	}
 	if err := awaitArtifact(s.ctx, d); err != nil {
 		return health.Opening, err
@@ -51,13 +51,15 @@ func (s *pipeline) serve(work string, f feed, burn Burn) (health.Phase, error) {
 	if err := hand(s.ctx, s.cast.Device, d.sink.URL(), opts.Format.ContentType, false); err != nil {
 		return health.Opening, err
 	}
-	slog.InfoContext(s.ctx, "streaming to device")
 	delivered, err := supervising(s.ctx, s.cast.Device, d, f)
-	if err != nil || !delivered {
-		if made, sent, ok := starved(f, d); err == nil && ok {
+	if err != nil {
+		return health.Playing, err
+	}
+	if !delivered {
+		if made, sent, ok := starved(f, d); ok {
 			return health.Playing, health.DeviceStarved("the playing cast", made, sent)
 		}
-		return health.Playing, err
+		return health.Playing, nil
 	}
 	return health.Playing, d.sink.Settled()
 }
@@ -158,7 +160,6 @@ func starved(f feed, d delivery) (made media.Progress, sent int64, ok bool) {
 }
 
 const (
-
 	// idleGrace is how long a device that stopped asking is waited for before the delivery is done.
 	idleGrace = 30 * time.Second
 

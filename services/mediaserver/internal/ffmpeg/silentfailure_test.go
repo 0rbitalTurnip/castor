@@ -12,10 +12,10 @@ func TestSilentFailuresAreCaughtOnAnyLine(t *testing.T) {
 		"[mp4 @ 0x2] Malformed AAC bitstream detected: use the audio bitstream filter 'aac_adtstoasc' to fix it",
 	} {
 		t.Run(marker, func(t *testing.T) {
-			// The marker scrolls out of the bounded tail and must still be remembered.
+			// The marker never enters the bounded tail of complaints and must still be remembered.
 			lines := []string{marker}
 			for i := range stderrTailCapacity * 2 {
-				lines = append(lines, fmt.Sprintf("frame= %d fps=25", i))
+				lines = append(lines, fmt.Sprintf("[warning] late packet %d", i))
 			}
 			tail, markers := drainLines(t, lines...)
 			if markers.failure() == nil {

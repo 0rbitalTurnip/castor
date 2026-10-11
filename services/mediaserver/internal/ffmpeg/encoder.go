@@ -79,7 +79,7 @@ func vaapiEncoder(name string, codec media.Codec, node string) Encoder {
 
 // Encoders is the best working encoder per codec on ffmpegPath, hardware first; each encoder is proven once by the value it returns.
 func Encoders(ffmpegPath string) func(context.Context, media.Codec) (Encoder, bool) {
-	proven := &provenEncoders{ffmpegPath: ffmpegPath, works: map[string]bool{}}
+	proven := &provenEncoders{ffmpegPath: ffmpegPath, slots: map[string]*proof{}}
 	return proven.best
 }
 
@@ -87,38 +87,61 @@ type provenEncoders struct {
 	ffmpegPath string
 
 	mu    sync.Mutex
-	works map[string]bool
+	slots map[string]*proof
+}
+
+// proof is one encoder's test, held per encoder so a slow test blocks only askers of that same encoder.
+type proof struct {
+	mu     sync.Mutex
+	tested bool
+	works  bool
 }
 
 func (p *provenEncoders) best(ctx context.Context, codec media.Codec) (Encoder, bool) {
 	all := candidates()
 	for _, hardware := range []bool{true, false} {
 		for _, e := range all {
-			if e.Codec == codec && e.Hardware == hardware && p.available(ctx, e) {
-				slog.InfoContext(ctx, "encoder selected", "encoder", e.Name, "codec", string(codec), "hardware", hardware)
-				return e, true
+			if e.Codec != codec || e.Hardware != hardware {
+				continue
 			}
+			works, ran := p.available(ctx, e)
+			if !works {
+				continue
+			}
+			if ran {
+				slog.InfoContext(ctx, "encoder selected", "encoder", e.Name, "codec", string(codec), "hardware", hardware)
+			}
+			return e, true
 		}
 	}
 	return Encoder{}, false
 }
 
-func (p *provenEncoders) available(ctx context.Context, e Encoder) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// available reports whether e works, and whether this call ran the test encode that proved it.
+func (p *provenEncoders) available(ctx context.Context, e Encoder) (works, ran bool) {
 	key := strings.Join(slices.Concat([]string{e.Name}, e.InitArgs, e.Filters, e.Flags), "\x00")
-	if works, proven := p.works[key]; proven {
-		return works
+	p.mu.Lock()
+	slot := p.slots[key]
+	if slot == nil {
+		slot = &proof{}
+		p.slots[key] = slot
 	}
-	works := testEncode(ctx, p.ffmpegPath, e)
+	p.mu.Unlock()
+
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	if slot.tested {
+		return slot.works, false
+	}
+	works = testEncode(ctx, p.ffmpegPath, e)
 	// A cancelled test proves nothing, and remembering it would disable working hardware.
 	if ctx.Err() == nil {
-		p.works[key] = works
+		slot.tested, slot.works = true, works
 	}
 	if !works {
 		slog.InfoContext(ctx, "encoder unavailable", "encoder", e.Name, "hardware", e.Hardware)
 	}
-	return works
+	return works, true
 }
 
 // testEncode encodes one tenth of a second with e's own device setup and filters.

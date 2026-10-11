@@ -30,15 +30,15 @@ type EncodeOptions struct {
 	Input  EncodeInput
 	Probe  media.ProbeInfo                // Measurement copy decisions were made from.
 	Format container.Format               // Container to produce.
-	Video  codec.Track[codec.VideoEncode] // Video axis of encode (zero = no decision, refused).
-	Audio  codec.Track[codec.AudioEncode] // Audio axis of encode (zero = no decision, refused).
+	Video  codec.Track[codec.VideoEncode] // Video axis of the encode.
+	Audio  codec.Track[codec.AudioEncode] // Audio axis of the encode.
 }
 
 // Verbatim reports whether this encode would only re-mux the spool it reads into the same stream.
 func (o EncodeOptions) Verbatim() bool {
 	_, video := o.Video.Encode()
 	_, audio := o.Audio.Encode()
-	return o.Video.Decided() && o.Audio.Decided() && !video && !audio &&
+	return !video && !audio &&
 		o.Input.piped && o.Format.Muxer == SpoolFormat.Muxer &&
 		o.Format.Delivery == container.DeliverStream
 }
@@ -47,7 +47,7 @@ func encodeInputArgs(in EncodeInput) []string {
 	if !in.piped {
 		return sourceInputArgs(in.source)
 	}
-	args := paceArgs(in.pace, ffmpeg.Binary{})
+	args := paceArgs(in.pace, false)
 	args = append(args, demuxFlags...)
 	return append(args, "-f", SpoolFormat.Muxer, "-i", ffmpeg.StdinPipe)
 }
@@ -78,9 +78,6 @@ func EncodeArgs(opts EncodeOptions) (ffmpeg.Command, error) {
 	if !opts.Input.piped && len(opts.Input.source.program.Inputs) == 0 {
 		return ffmpeg.Command{}, fmt.Errorf("encode has no input: build one with FromPipe or FromSource")
 	}
-	if err := decidedTracks(opts.Video, opts.Audio); err != nil {
-		return ffmpeg.Command{}, err
-	}
 	if opts.Format.Muxer == "" {
 		return ffmpeg.Command{}, fmt.Errorf("no output container: EncodeOptions.Format is unset")
 	}
@@ -95,7 +92,7 @@ func EncodeArgs(opts EncodeOptions) (ffmpeg.Command, error) {
 		burnIn = venc.SubtitleTextFile
 	}
 
-	args := []string{"-hide_banner", "-nostats"}
+	args := []string{"-hide_banner", "-nostats", "-loglevel", "level+warning"}
 	args = append(args, hardwareInitArgs(opts.Video)...)
 	args = append(args, encodeInputArgs(opts.Input)...)
 	args = append(args, encodeMapArgs(opts.Input)...)

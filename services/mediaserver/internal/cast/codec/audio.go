@@ -28,32 +28,24 @@ var surroundTargets = []audioTarget{
 var audioRefusals = slices.Concat([]refusalRule{{
 	// Device's advertised support is codec AND channel count; 2.0 AC-3 is not 5.1 AC-3.
 	reason: reasonDeviceAudio,
-	why:    says("the device never advertised this audio codec at this channel count"),
 	when:   func(in Inputs) bool { return !in.Caps.CanCopyAudio(in.Probe) },
 }, {
 	reason: reasonSampleRate,
-	why:    says(fmt.Sprintf("the audio is sampled above the %d Hz every device castor serves plays", media.PlaybackSampleRate)),
 	when:   func(in Inputs) bool { return in.Probe.AudioSampleRate > media.PlaybackSampleRate },
 }}, audioCarriageRefusals)
 
 var audioCarriageRefusals = []refusalRule{{
 	reason: reasonSpliced,
-	why:    says("the source is stitched from pieces encoded apart, whose sample rates and timestamps change at each seam"),
 	when:   func(in Inputs) bool { return in.Spliced },
 }, {
 	reason: reasonContainerAudio,
-	why: func(in Inputs) string {
-		_, why := container.Why(in.Probe, in.Into)
-		return why
-	},
-	when: func(in Inputs) bool { return container.Uncarried(in.Probe, in.Into).Audio },
+	when:   func(in Inputs) bool { return container.Uncarried(in.Probe, in.Into).Audio },
 }, {
 	reason: reasonAudioCopyFailed,
-	why:    says("a previous attempt's copy of this audio track broke upstream, so it is decoded instead"),
 	when:   func(in Inputs) bool { return in.Decode.Audio },
 }}
 
-func decideAudio(in Inputs) (Track[AudioEncode], []Refusal, error) {
+func decideAudio(in Inputs) (Track[AudioEncode], []Reason, error) {
 	if in.Probe.AudioCodec == "" && in.Measured {
 		return CopyAudio(), nil, nil
 	}

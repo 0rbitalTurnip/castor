@@ -1,9 +1,7 @@
 package recovery
 
 import (
-	"cmp"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/stupside/castor/services/mediaserver/internal/cast/health"
@@ -61,8 +59,6 @@ func (k kind) String() string {
 }
 
 type classRule struct {
-	// name is the rule's own name where it differs from its Kind's.
-	name string
 	why  string
 	when func(Evidence) bool
 	kind kind
@@ -71,49 +67,47 @@ type classRule struct {
 // classes is the ordered classification rules for failed attempts; every discriminator is STRUCTURAL.
 var classes = []classRule{{
 	// First, because cancellation is upstream of every symptom below; decided from context, not error text.
-	why:  "the cast was cancelled",
+	why:  "cancelled",
 	when: func(e Evidence) bool { return e.Cancelled },
 	kind: cancelled,
 }, {
-	why:  "the device stopped answering the protocol it was being watched over, so there is nothing at the far end of this cast to send anything to",
+	why:  "the device stopped answering",
 	when: func(e Evidence) bool { return e.DeviceGone != nil },
 	kind: deviceGone,
 }, {
 	// Only castor reads such a timeline, so no other policy on this link reads it either.
-	name: "timeline-unreadable",
-	why:  "castor could not read the timeline of a source it follows itself, so this link cannot be read at all",
+	why:  "the link's timeline is unreadable",
 	when: func(e Evidence) bool { return e.TimelineErr != nil },
 	kind: unreachable,
 }, {
 	// Media landed then died is deliberately not unreachable; that would send a working cast to recovery.
-	why: "the source read landed no media and never stated a speed, so nothing about this link was established",
+	why: "the link delivered nothing",
 	when: func(e Evidence) bool {
 		return (e.Verdict == health.Dead || e.Verdict == health.Undeliverable) && e.Reached <= health.Reading && e.Vitals.Landed == 0 && e.Vitals.Samples == 0
 	},
 	kind: unreachable,
 }, {
 	// A cold or failing edge truncates or drops segments; a second read of the same link may get them whole.
-	name: "source-incomplete",
-	why:  "the source read ended short of what the source declared, with segments truncated or skipped by the origin",
+	why:  "the source ended short of its declared length",
 	when: func(e Evidence) bool { return e.Reached <= health.Reading && e.ReadIncomplete },
 	kind: sourceStalled,
 }, {
 	// Keyed on READER exit status and copied axes; castor kills the reader on its own faults.
-	why: "the source read exited on packets it was copying, so the bitstream it was handed cannot be passed through as it is",
+	why: "the source cannot be copied as it is",
 	when: func(e Evidence) bool {
 		return e.Reached <= health.Reading && e.ReadExit > 0 && e.Copied.Any()
 	},
 	kind: copyBrokeUpstream,
 }, {
 	// One change (stop asking device to fetch) answers all three shapes at different moments.
-	why: "the device would not play what it was pointed at, never came for the bytes, or stopped taking them with the program still being served",
+	why: "the device refused the stream",
 	when: func(e Evidence) bool {
 		return e.PlayErr != nil || e.Undelivered != nil || e.Verdict == health.Unfetched
 	},
 	kind: deviceRefused,
 }, {
 	// Container refuses tracks at header-write time or reader's every segment answered 404; or it fell silent over a buffer already proven.
-	why: "the delivery ended, or went silent over castor's own proven buffer, without producing anything a device could fetch",
+	why: "the delivery produced nothing",
 	when: func(e Evidence) bool {
 		return e.Reached == health.Opening && (e.Verdict == health.Dead || e.Verdict == health.Stalled && e.Buffered)
 	},
@@ -123,37 +117,35 @@ var classes = []classRule{{
 var verdictClasses = map[health.Kind]classRule{
 	// It already waited out two reconnect ceilings.
 	health.Stalled: {
-		why:  "the source stopped delivering entirely while it was still supposed to be delivering",
+		why:  "the source stopped delivering",
 		kind: sourceStalled,
 	},
 	health.Starved: {
-		why:  "the device ran out of media before the upstream read finished, so the source delivers less than playback consumes",
+		why:  "the source delivers less than playback consumes",
 		kind: starved,
 	},
 	health.Undeliverable: {
-		why:  "the source delivered less than playback consumes for the whole deliver budget, so no cushion could carry the program",
+		why:  "the source is too slow to play",
 		kind: tooSlow,
 	},
 }
 
 // unrecognised is the fallback row; fault still carries phase, measurements and evidence.
 var unrecognised = classRule{
-	why:  "the attempt failed in a way no rule recognises",
+	why:  "the attempt failed",
 	kind: unclassified,
 }
 
 // classify names what failed, after the strategies already tried.
-func classify(in Intent, a Attempt, o Outcome, tried []string) *fault {
+func classify(a Attempt, o Outcome, tried []string) *fault {
 	r := classFor(o.Evidence)
 	return &fault{
-		kind:       r.kind,
-		why:        r.why,
-		rule:       cmp.Or(r.name, r.kind.String()),
-		attempt:    a,
-		candidates: len(in.Candidates),
-		evidence:   o.Evidence,
-		tried:      tried,
-		err:        o.Err,
+		kind:     r.kind,
+		why:      r.why,
+		attempt:  a,
+		evidence: o.Evidence,
+		tried:    tried,
+		err:      o.Err,
 	}
 }
 
@@ -172,12 +164,9 @@ func classFor(e Evidence) classRule {
 type fault struct {
 	kind kind
 	why  string
-	rule string
-	// attempt is half of what failure means; verdict varies by candidate rank.
-	attempt Attempt
-	// candidates is the other half; refusal on the last one means castor spent the whole ordering.
-	candidates int
-	evidence   Evidence
+	// attempt is the one that failed, which a strategy revises.
+	attempt  Attempt
+	evidence Evidence
 	// tried distinguishes 'could not cast this' from 'tried three things and here is what each measured'.
 	tried []string
 	// err is the attempt's own error, unwrapped so errors.Is still finds cancellation or exit status.
@@ -186,11 +175,7 @@ type fault struct {
 
 func (f *fault) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s: %s (try %d, %s, reached %s, %s)",
-		f.kind, f.why, f.attempt.Try, f.attempt, f.evidence.Reached, f.evidence.Vitals)
-	if terms := f.arithmetic(); len(terms) > 0 {
-		fmt.Fprintf(&b, "; %s", strings.Join(terms, "; "))
-	}
+	fmt.Fprintf(&b, "%s: %s", f.kind, f.why)
 	if len(f.tried) > 0 {
 		fmt.Fprintf(&b, "; already tried: %s", strings.Join(f.tried, ", "))
 	}
@@ -206,36 +191,9 @@ func (f *fault) Error() string {
 	return b.String()
 }
 
-func (f *fault) arithmetic() []string {
-	var terms []string
-	o := f.attempt.Origin
-	if o.Duration > 0 {
-		terms = append(terms, fmt.Sprintf("the source published a %s program", o.Duration))
-	}
-	if len(o.Renditions) > 0 {
-		terms = append(terms, fmt.Sprintf("the source published %d renditions", len(o.Renditions)))
-	}
-	spent := fmt.Sprintf("candidate %d of %d", f.attempt.candidate+1, f.candidates)
-	if f.attempt.candidate+1 >= f.candidates {
-		spent += fmt.Sprintf(", every one of the %d links the ranker offered", f.candidates)
-	}
-	terms = append(terms, spent)
-	return terms
-}
-
-// tells quotes what the blamed party printed, its complaints before its chatter; it never decides a class.
+// tells quotes the last few complaints the blamed party printed; it never decides a class.
 func tells(lines []string) []string {
-	const most = 4
-	complaints := slices.DeleteFunc(slices.Clone(lines), func(line string) bool {
-		return !strings.HasPrefix(line, "[error]") && !strings.HasPrefix(line, "[fatal]") && !strings.HasPrefix(line, "[warning]")
-	})
-	if len(complaints) > 0 {
-		lines = complaints
-	}
-	if len(lines) > most {
-		return lines[len(lines)-most:]
-	}
-	return lines
+	return lines[max(0, len(lines)-4):]
 }
 
 func (f *fault) Unwrap() error { return f.err }

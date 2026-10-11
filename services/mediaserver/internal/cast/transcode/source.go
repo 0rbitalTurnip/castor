@@ -34,9 +34,6 @@ func NewProgramSource(program media.Program, plan fetch.Plan, binary ffmpeg.Bina
 	if !video && !audio {
 		return ProgramSource{}, fmt.Errorf("FFmpeg program source selects neither video nor audio")
 	}
-	if err := plan.Validate(program); err != nil {
-		return ProgramSource{}, fmt.Errorf("FFmpeg program source: %w", err)
-	}
 	// A representation is castor's to translate; ffmpeg reading the whole manifest would play something else.
 	for _, input := range program.Inputs {
 		if input.Representation != "" {
@@ -88,7 +85,7 @@ type sourceInput struct {
 }
 
 // paceArgs renders read pace as ffmpeg input flags (nil if unpaced).
-func paceArgs(p fetch.Pace, binary ffmpeg.Binary) []string {
+func paceArgs(p fetch.Pace, catchup bool) []string {
 	if p.Realtime <= 0 {
 		return nil
 	}
@@ -97,7 +94,7 @@ func paceArgs(p fetch.Pace, binary ffmpeg.Binary) []string {
 		"-readrate_initial_burst", strconv.Itoa(int(p.Burst.Seconds())),
 	}
 	// An older binary catches up unbounded on its own; a newer one only at the rate it is given.
-	if binary.Catchup && p.Catchup > p.Realtime {
+	if catchup && p.Catchup > p.Realtime {
 		args = append(args, "-readrate_catchup", formatRate(p.Catchup))
 	}
 	return args
@@ -151,7 +148,7 @@ func sourceInputArgs(source ProgramSource) []string {
 	}
 	for _, input := range source.inputs() {
 		args = append(args, demuxFlags...)
-		args = append(args, paceArgs(input.fetch.Pace, source.binary)...)
+		args = append(args, paceArgs(input.fetch.Pace, source.binary.Catchup)...)
 		args = append(args, source.openArgs(input)...)
 		if input.offset != 0 {
 			args = append(args, "-itsoffset", formatSeconds(input.offset))
