@@ -1023,3 +1023,6 @@ func TestAStopLostOnTheWayToTheMediaServerIsSentAgain(t *testing.T) {
 		}
 	})
 }
+
+func (*connection) Pause(context.Context) error  { return nil }
+func (*connection) Resume(context.Context) error { return nil }

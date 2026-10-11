@@ -21,6 +21,10 @@ type Device interface {
 
 	AwaitEnd(ctx context.Context) error
 
+	// Pause holds the device on its picture until Resume, for a source that fell behind playback.
+	Pause(ctx context.Context) error
+	Resume(ctx context.Context) error
+
 	Capabilities() *mediav1.Capabilities
 
 	Close() error

@@ -20,6 +20,8 @@ import (
 type Device interface {
 	Play(ctx context.Context, streamURL *url.URL, container mediav1.Container) error
 	AwaitEnd(ctx context.Context) error
+	Pause(ctx context.Context) error
+	Resume(ctx context.Context) error
 	Capabilities() *mediav1.Capabilities
 }
 
@@ -108,6 +110,10 @@ func (d *driver) exec(ctx context.Context, cmd *mediav1.DeviceCommand) *mediav1.
 		return outcome(d.device.Play(ctx, target, c.Play.GetContainer()))
 	case *mediav1.DeviceCommand_AwaitEnd_:
 		return outcome(d.device.AwaitEnd(ctx))
+	case *mediav1.DeviceCommand_Pause_:
+		return outcome(d.device.Pause(ctx))
+	case *mediav1.DeviceCommand_Resume_:
+		return outcome(d.device.Resume(ctx))
 	}
 	return failure(fmt.Errorf("device command %q is one this drive does not know", cmd.GetId()))
 }

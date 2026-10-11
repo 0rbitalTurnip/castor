@@ -68,3 +68,6 @@ func TestADeviceThatMovedSinceItWasListedIsFoundAgainToConnect(t *testing.T) {
 		t.Errorf("Connect = %v, want the device reached at its new address", err)
 	}
 }
+
+func (idle) Pause(context.Context) error  { return nil }
+func (idle) Resume(context.Context) error { return nil }

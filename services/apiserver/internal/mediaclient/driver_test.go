@@ -41,3 +41,6 @@ func TestDuplicateCommandIDsDoNotLoseCancellationOfTheFirstCall(t *testing.T) {
 		}
 	})
 }
+
+func (*waitingDevice) Pause(context.Context) error  { return nil }
+func (*waitingDevice) Resume(context.Context) error { return nil }

@@ -47,6 +47,16 @@ func (r *reconnecting) AwaitEnd(ctx context.Context) error {
 	return dev.AwaitEnd(ctx)
 }
 
+func (r *reconnecting) Pause(ctx context.Context) error {
+	dev, _ := r.current()
+	return dev.Pause(ctx)
+}
+
+func (r *reconnecting) Resume(ctx context.Context) error {
+	dev, _ := r.current()
+	return dev.Resume(ctx)
+}
+
 func (r *reconnecting) Capabilities() *mediav1.Capabilities {
 	dev, _ := r.current()
 	return dev.Capabilities()

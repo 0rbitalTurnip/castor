@@ -22,6 +22,8 @@ type session struct {
 	watchMu sync.Mutex
 	watch   playback
 	ending  *ending
+	// transport is the media receiver the last Play loaded on.
+	transport string
 }
 
 var _ device.Device = (*session)(nil)
@@ -52,6 +54,7 @@ func (s *session) play(ctx context.Context, streamURL *url.URL, contentType stri
 	s.watchMu.Lock()
 	s.watch.begin(streamURL.String())
 	s.ending = mine
+	s.transport = transport
 	s.watchMu.Unlock()
 	reply, err := s.ch.request(ctx, transport, nsMedia, &castmedia.LoadMediaCommand{
 		Type:     msgLoad,
@@ -69,6 +72,29 @@ func (s *session) play(ctx context.Context, streamURL *url.URL, contentType stri
 		}
 		s.watchMu.Unlock()
 		return fmt.Errorf("starting chromecast playback: %w", err)
+	}
+	return nil
+}
+
+func (s *session) Pause(ctx context.Context) error { return s.transportCommand(ctx, msgPause) }
+
+func (s *session) Resume(ctx context.Context) error { return s.transportCommand(ctx, msgPlay) }
+
+// transportCommand sends PAUSE or PLAY to the media session the last Play opened.
+func (s *session) transportCommand(ctx context.Context, msg string) error {
+	s.watchMu.Lock()
+	transport, mediaSession := s.transport, s.watch.mediaSession
+	s.watchMu.Unlock()
+	if mediaSession == 0 {
+		return fmt.Errorf("%s: the chromecast has reported no media session yet", msg)
+	}
+	reply, err := s.ch.request(ctx, transport, nsMedia, &castmedia.MediaHeader{PayloadHeader: castmedia.PayloadHeader{Type: msg}, MediaSessionId: mediaSession})
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	var response castmedia.MediaStatusResponse
+	if err := json.Unmarshal(reply, &response); err != nil || response.Type != msgMediaStatus {
+		return fmt.Errorf("%s: the chromecast answered %s", msg, response.Type)
 	}
 	return nil
 }

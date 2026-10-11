@@ -132,6 +132,9 @@ message DeviceCommand {
     AwaitEnd await_end = 3;
     // cancel abandons a command still running; it is never answered.
     Cancel cancel = 4;
+    // pause holds the device on its current picture until resume; the media server pauses a device its source cannot keep ahead of.
+    Pause pause = 5;
+    Resume resume = 6;
   }
 
   message Play {
@@ -151,6 +154,10 @@ message DeviceCommand {
   }
 
   message AwaitEnd {}
+
+  message Pause {}
+
+  message Resume {}
 
   message Cancel {
     string command_id = 1 [(buf.validate.field).string.min_len = 1];

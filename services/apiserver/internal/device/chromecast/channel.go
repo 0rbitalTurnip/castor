@@ -24,6 +24,8 @@ const (
 	msgConnect     = "CONNECT"
 	msgGetStatus   = "GET_STATUS"
 	msgLoad        = "LOAD"
+	msgPause       = "PAUSE"
+	msgPlay        = "PLAY"
 	msgClose       = "CLOSE"
 	msgMediaStatus = "MEDIA_STATUS"
 	msgPing        = "PING"

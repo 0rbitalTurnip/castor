@@ -78,6 +78,20 @@ func (s *session) Play(ctx context.Context, streamURL *url.URL, container mediav
 	return nil
 }
 
+func (s *session) Pause(ctx context.Context) error {
+	if err := s.action(ctx, "Pause", &struct{ InstanceID string }{"0"}); err != nil {
+		return fmt.Errorf("pausing playback: %w", err)
+	}
+	return nil
+}
+
+func (s *session) Resume(ctx context.Context) error {
+	if err := s.action(ctx, "Play", &struct{ InstanceID, Speed string }{"0", "1"}); err != nil {
+		return fmt.Errorf("resuming playback: %w", err)
+	}
+	return nil
+}
+
 func retryTransportLocked(ctx context.Context, do func() error) error {
 	var err error
 	for attempt := range transportLockedRetries {

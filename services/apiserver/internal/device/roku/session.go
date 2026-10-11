@@ -72,6 +72,27 @@ func (s *session) Play(ctx context.Context, streamURL *url.URL, container mediav
 	return nil
 }
 
+// Pause presses Play, the one ECP key there is for both: the channel toggles between playing and paused.
+func (s *session) Pause(ctx context.Context) error { return s.keypress(ctx, "Play") }
+
+func (s *session) Resume(ctx context.Context) error { return s.keypress(ctx, "Play") }
+
+func (s *session) keypress(ctx context.Context, key string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.ecp.JoinPath("keypress", key).String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := s.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("roku keypress %s: %w", key, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("roku keypress %s: %s", key, resp.Status)
+	}
+	return nil
+}
+
 const mediaPlayerQuery = "/query/media-player"
 
 // AwaitEnd answers exactly ONE of the two things an ECP poll could establish.

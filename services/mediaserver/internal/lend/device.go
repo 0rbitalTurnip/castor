@@ -47,6 +47,14 @@ func (d Device) AwaitEnd(ctx context.Context) error {
 	return err
 }
 
+func (d Device) Pause(ctx context.Context) error {
+	return d.done(ctx, &mediav1.DeviceCommand{Command: &mediav1.DeviceCommand_Pause_{Pause: &mediav1.DeviceCommand_Pause{}}})
+}
+
+func (d Device) Resume(ctx context.Context) error {
+	return d.done(ctx, &mediav1.DeviceCommand{Command: &mediav1.DeviceCommand_Resume_{Resume: &mediav1.DeviceCommand_Resume{}}})
+}
+
 func (d Device) Capabilities() media.Capabilities { return d.caps }
 
 func (d Device) done(ctx context.Context, cmd *mediav1.DeviceCommand) error {

@@ -216,3 +216,6 @@ func TestADeviceGoneIsAnsweredGoneSoTheCastsRecoveryReadsIt(t *testing.T) {
 		t.Errorf("the play was answered gone as %v, want %v", got, want)
 	}
 }
+
+func (*lentDevice) Pause(context.Context) error  { return nil }
+func (*lentDevice) Resume(context.Context) error { return nil }
