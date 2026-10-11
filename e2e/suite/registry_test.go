@@ -59,6 +59,7 @@ var (
 		faults.Trickles{},
 		faults.StallsAt{},
 		faults.StallsFor{},
+		faults.HangsOnce{},
 		faults.Hiccups{},
 		faults.ColdEdge{},
 		faults.Truncates{},
@@ -103,6 +104,7 @@ var (
 		strategy.OneOf[judge.Check]{Called: "delivery", Of: strategy.Registry[judge.Check]{expect.Served{}, expect.Passthrough{}}},
 		strategy.OneOf[judge.Check]{Called: "video", Of: strategy.Registry[judge.Check]{expect.Copied{}, expect.Encoded{}}},
 		expect.Channels{},
+		strategy.Fixed[judge.Check]{Strategy: expect.Uninterrupted{}},
 		strategy.OneOf[judge.Check]{Called: "frames", Of: strategy.Registry[judge.Check]{expect.Complete{}}},
 	}
 	invariants = []judge.Check{

@@ -13,16 +13,18 @@ func TestVerdicts(t *testing.T) {
 		vitals Vitals
 		want   Kind
 	}{
-		{"a cushion of media at playback pace opens a cast", Reading, Vitals{Landed: 1, Position: readCushion, rate: 1}, ready},
-		{"a cushion delivered under playback pace waits", Reading, Vitals{Landed: 1, Position: readCushion, rate: 0.8}, starting},
+		{"a cushion of media opens a cast", Reading, Vitals{Landed: 1, Position: readCushion, rate: 1, fill: 1}, ready},
+		{"a cushion delivered under playback pace opens a cast too, which a pause meets later", Reading, Vitals{Landed: 1, Position: readCushion, rate: 0.8, fill: 0.8, sinceDeficit: 2 * deliverBudget}, ready},
+		{"a cushion landed under half of playback pace waits, however fast its last stretch", Reading, Vitals{Landed: 1, Position: readCushion, rate: 1.5, fill: 0.4}, starting},
+		{"a cushion landed under half of playback pace is given up after the deliver budget", Reading, Vitals{Landed: 1, Position: readCushion, rate: 0.4, fill: 0.4, sinceDeficit: deliverBudget + time.Second}, Undeliverable},
 		{"a buffer under the cushion waits", Reading, Vitals{Landed: 1 << 20, Position: readCushion - time.Second, rate: 3}, starting},
 		{"an empty buffer waits", Reading, Vitals{}, starting},
 		{"a burn-in waits for the transcription lead", Reading, Vitals{Landed: 4 << 20, Position: readCushion, rate: 2, subtitles: true, lead: transcriptionLead.Seconds() - 1}, starting},
-		{"the transcription lead opens the gate", Reading, Vitals{Landed: 1, Position: readCushion, rate: 1, subtitles: true, lead: transcriptionLead.Seconds()}, ready},
+		{"the transcription lead opens the gate", Reading, Vitals{Landed: 1, Position: readCushion, rate: 1, fill: 1, subtitles: true, lead: transcriptionLead.Seconds()}, ready},
 		{"a finished transcription over an empty buffer does not open", Reading, Vitals{subtitles: true, leadDone: true}, starting},
 		{"an ended read is never held, even empty under burn-in", Reading, Vitals{ended: true, subtitles: true}, ready},
-		{"a read under playback pace for the deliver budget is undeliverable", Reading, Vitals{Landed: 1 << 20, Position: 20 * time.Second, rate: 0.7, sinceDeficit: deliverBudget + time.Second}, Undeliverable},
-		{"a read under pace within the budget still waits", Reading, Vitals{Landed: 1 << 20, Position: 20 * time.Second, rate: 0.7, sinceDeficit: deliverBudget - time.Second}, starting},
+		{"a read under playback pace for the deliver budget is undeliverable", Reading, Vitals{Landed: 1 << 20, Position: readCushion - time.Second, rate: 0.7, sinceDeficit: deliverBudget + time.Second}, Undeliverable},
+		{"a read under pace within the budget still waits", Reading, Vitals{Landed: 1 << 20, Position: readCushion - time.Second, rate: 0.7, sinceDeficit: deliverBudget - time.Second}, starting},
 		{"a finished read is never undeliverable", Reading, Vitals{ended: true, sinceDeficit: 10 * deliverBudget}, ready},
 		{"a read that failed before playback is dead", Reading, Vitals{Landed: 1 << 20, ended: true, failed: true}, Dead},
 		{"the artifact appearing opens a delivery", Opening, Vitals{Landed: 1}, ready},
@@ -43,6 +45,8 @@ func TestVerdicts(t *testing.T) {
 		{"a held device whose read is ahead again is replenished", Playing, Vitals{holdable: true, paused: true, Landed: 8 << 20, handed: 4 << 20, Position: 10 * time.Minute, played: 10*time.Minute - highWater}, Replenished},
 		{"a held device whose read finished is replenished", Playing, Vitals{holdable: true, paused: true, ended: true, Landed: 8 << 20, handed: 4 << 20, Position: 10 * time.Minute, played: 10 * time.Minute}, Replenished},
 		{"a held device still short of the cushion stays held", Playing, Vitals{holdable: true, paused: true, Landed: 8 << 20, handed: 4 << 20, Position: 10 * time.Minute, played: 10*time.Minute - highWater + time.Second, sincePause: pauseBudget - time.Second}, healthy},
+		{"a device held longer than it played, past the crawl mark, is starved", Playing, Vitals{holdable: true, paused: true, Landed: 8 << 20, handed: 4 << 20, Position: 3 * time.Minute, played: crawlAfter, held: crawlAfter + time.Second, sincePause: time.Second}, Starved},
+		{"a device held longer than it played before the crawl mark is one outage, not a crawl", Playing, Vitals{holdable: true, paused: true, Landed: 8 << 20, handed: 4 << 20, Position: time.Minute, played: time.Minute, held: 70 * time.Second, sincePause: time.Second}, healthy},
 		{"a device held past the pause budget is starved", Playing, Vitals{holdable: true, paused: true, Landed: 8 << 20, handed: 4 << 20, Position: 10 * time.Minute, played: 10 * time.Minute, sincePause: pauseBudget + time.Second}, Starved},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

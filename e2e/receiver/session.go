@@ -51,6 +51,9 @@ type Received struct {
 	Ended    time.Time
 	// Problems are protocol violations the receiver saw.
 	Problems []string
+	// Holds is how often the sender paused playback, and Held for how long in all.
+	Holds int
+	Held  time.Duration
 }
 
 // Session takes one hand-off and plays it; families drive it from their protocol handlers.
@@ -177,6 +180,7 @@ func (s *Session) Received(t *testing.T, handOff time.Duration) (Received, bool)
 	defer s.mu.Unlock()
 	got := s.received
 	got.Problems = slices.Clone(got.Problems)
+	got.Holds, got.Held = s.clock.paused()
 	return got, true
 }
 

@@ -36,11 +36,11 @@ var rules = []rule{{
 	when:   func(h Vitals) bool { return h.failed },
 	kind:   Dead,
 }, {
-	// A device plays at 1x; a read under that for the whole budget cannot build a cushion that lasts.
+	// Ahead of the ready rows: a read that never landed its cushion at a pace pauses can carry has nothing to start a device on.
 	name:   "undeliverable",
-	why:    "the source has delivered less than playback consumes for the whole deliver budget, so no cushion could carry the program",
+	why:    "the source delivered less than playback consumes for the whole deliver budget without landing the cushion a device starts on at half of playback pace or better",
 	phases: []Phase{Reading},
-	when:   func(h Vitals) bool { return !h.ended && h.sinceDeficit > deliverBudget },
+	when:   func(h Vitals) bool { return !h.ended && !h.worthStarting() && h.sinceDeficit > deliverBudget },
 	kind:   Undeliverable,
 }, {
 	// Such as a container refusing the codec at its header.
@@ -72,9 +72,9 @@ var rules = []rule{{
 	blames: theDevice,
 }, {
 	name:   "starved",
-	why:    "the device was held for the whole pause budget and the source never got ahead of it again",
+	why:    "the device was held for the whole pause budget, or for longer than it has played, and the source never kept ahead of it",
 	phases: []Phase{Playing},
-	when:   func(h Vitals) bool { return h.paused && h.sincePause > pauseBudget },
+	when:   func(h Vitals) bool { return h.paused && (h.sincePause > pauseBudget || h.crawling()) },
 	kind:   Starved,
 }, {
 	// The read ending leaves nothing to wait for; the device plays out what it has.
@@ -93,18 +93,18 @@ var rules = []rule{{
 	kind: Lean,
 }, {
 	name:   "burn-in-ready",
-	why:    "the buffer holds a cushion of media delivered at playback pace, and the transcription is far enough ahead of the encoder",
+	why:    "the buffer holds a cushion of media landed at a pace pauses can carry, and the transcription is far enough ahead of the encoder",
 	phases: []Phase{Reading},
 	when: func(h Vitals) bool {
-		return h.subtitles && (h.playable() && h.cushioned() && h.paced() && h.leads() || h.ended)
+		return h.subtitles && (h.playable() && h.worthStarting() && h.leads() || h.ended)
 	},
 	kind: ready,
 }, {
 	name:   "ready",
-	why:    "the buffer holds a cushion of media delivered at playback pace",
+	why:    "the buffer holds a cushion of media, landed at a pace pauses can carry",
 	phases: []Phase{Reading},
 	when: func(h Vitals) bool {
-		return !h.subtitles && (h.playable() && h.cushioned() && h.paced() || h.ended)
+		return !h.subtitles && (h.playable() && h.worthStarting() || h.ended)
 	},
 	kind: ready,
 }, {

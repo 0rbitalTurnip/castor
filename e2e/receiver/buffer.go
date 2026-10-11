@@ -24,6 +24,8 @@ type clock struct {
 	// heldSince is when playback was last paused, zero while playing; held is every pause before it.
 	heldSince time.Time
 	held      time.Duration
+	// holds counts every time playback was paused.
+	holds int
 }
 
 // hold pauses or resumes the clock.
@@ -33,10 +35,22 @@ func (c *clock) hold(on bool) {
 	switch {
 	case on && c.heldSince.IsZero():
 		c.heldSince = time.Now()
+		c.holds++
 	case !on && !c.heldSince.IsZero():
 		c.held += time.Since(c.heldSince)
 		c.heldSince = time.Time{}
 	}
+}
+
+// paused is how often and how long playback was held.
+func (c *clock) paused() (int, time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	held := c.held
+	if !c.heldSince.IsZero() {
+		held += time.Since(c.heldSince)
+	}
+	return c.holds, held
 }
 
 func (c *clock) holding() bool {

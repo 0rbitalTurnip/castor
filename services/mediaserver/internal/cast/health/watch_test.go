@@ -114,16 +114,16 @@ func (p *pacedProducer) Done() <-chan struct{} { return p.done }
 func (p *pacedProducer) Err() error            { return nil }
 func (p *pacedProducer) Evidence() []string    { return nil }
 
-// A read under playback pace is given up before any device is pointed at it, however much it has landed.
-func TestAReadUnderPlaybackPaceIsUndeliverable(t *testing.T) {
+// A read too slow to land even the cushion is given up before any device is pointed at it.
+func TestAReadThatCannotLandItsCushionIsUndeliverable(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		producer := &pacedProducer{done: make(chan struct{}), start: time.Now(), made: func(d time.Duration) time.Duration { return d * 7 / 10 }}
+		producer := &pacedProducer{done: make(chan struct{}), start: time.Now(), made: func(d time.Duration) time.Duration { return d * 2 / 10 }}
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 		defer cancel()
 		err := Watch(ctx, Monitor{Subject: "playback gate", Phase: Reading, Producer: producer, Telemetry: producer, Landed: func() int64 { return 1 << 20 }})
 		fault, ok := errors.AsType[*Fault](err)
 		if !ok || fault.Kind != Undeliverable || !fault.Revise {
-			t.Fatalf("Watch = %v, want a revisable undeliverable verdict against a 0.7x read", err)
+			t.Fatalf("Watch = %v, want a revisable undeliverable verdict against a 0.2x read", err)
 		}
 		if waited := time.Since(producer.start); waited > deliverBudget+time.Second {
 			t.Errorf("the gate waited %v on a read that never kept pace, want about the deliver budget", waited)
@@ -202,13 +202,13 @@ func TestADeviceOutrunningItsReadIsHeldThenReleased(t *testing.T) {
 		if len(dev.holds) != 1 || len(dev.releases) != 1 {
 			t.Fatalf("held %d times and released %d, want once each", len(dev.holds), len(dev.releases))
 		}
-		// Frozen from 1:00 with 30s ahead, the device reaches the low-water mark 20s later.
-		if held := dev.holds[0].Sub(start); held < time.Minute+19*time.Second || held > time.Minute+22*time.Second {
-			t.Errorf("held at %v, want about 1m20s when the device came within the low-water mark", held)
+		// Frozen from 1:00 with the cushion ahead, the device reaches the low-water mark 10s later.
+		if held := dev.holds[0].Sub(start); held < time.Minute+9*time.Second || held > time.Minute+12*time.Second {
+			t.Errorf("held at %v, want about 1m10s when the device came within the low-water mark", held)
 		}
-		// Racing from 2:00 at 3x, the read is the cushion ahead of the device held at 1:20 some 7s later.
-		if released := dev.releases[0].Sub(start); released < 2*time.Minute+6*time.Second || released > 2*time.Minute+8*time.Second {
-			t.Errorf("released at %v, want about 2m07s when the read was the cushion ahead again", released)
+		// Racing from 2:00 at 3x, the read is the high-water mark ahead of the device held at 1:10 some 5s later.
+		if released := dev.releases[0].Sub(start); released < 2*time.Minute+4*time.Second || released > 2*time.Minute+7*time.Second {
+			t.Errorf("released at %v, want about 2m05s when the read was the high-water mark ahead again", released)
 		}
 	})
 }

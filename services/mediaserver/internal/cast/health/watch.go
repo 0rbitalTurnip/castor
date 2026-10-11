@@ -146,6 +146,9 @@ func (t *tracker) read() Vitals {
 		t.sample = sample
 		h.Position, h.Speed, h.Samples = sample.Position, sample.Speed, t.samples
 		h.rate = t.pace(now, h.Position)
+		if since := now.Sub(t.start); since > 0 {
+			h.fill = h.Position.Seconds() / since.Seconds()
+		}
 	}
 	if h.paced() {
 		t.kept = now
@@ -188,7 +191,7 @@ func (t *tracker) read() Vitals {
 			h.sincePause = now.Sub(t.pausedAt)
 			held += h.sincePause
 		}
-		h.played = now.Sub(t.start) - held
+		h.played, h.held = now.Sub(t.start)-held, held
 	}
 
 	if t.m.Grace > 0 {
