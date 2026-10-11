@@ -98,3 +98,35 @@ func TestDLNAAnswersWhenTheCastEnds(t *testing.T) {
 		t.Error("the suite never polled the device")
 	}
 }
+
+func TestADeviceThatStaysStoppedNeverPlayedTheStream(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		polls := 0
+		poll := func(context.Context) (string, error) {
+			polls++
+			return "STOPPED", nil
+		}
+		err := awaitTransportEnd(t.Context(), "Living Room", poll)
+		if err == nil || !strings.Contains(err.Error(), "refused the stream") {
+			t.Fatalf("awaitTransportEnd() = %v, want the device named as having refused the stream", err)
+		}
+		if polls != idlePolls {
+			t.Errorf("polled %d times, want %d", polls, idlePolls)
+		}
+	})
+}
+
+func TestADeviceBufferingBeforeItPlaysIsNotRefusing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		script := []string{"STOPPED", "STOPPED", "TRANSITIONING", "STOPPED", "PLAYING", "STOPPED"}
+		i := 0
+		poll := func(context.Context) (string, error) {
+			state := script[i]
+			i++
+			return state, nil
+		}
+		if err := awaitTransportEnd(t.Context(), "Living Room", poll); err != nil || i != len(script) {
+			t.Fatalf("awaitTransportEnd() = %v after %d polls, want a clean end once it played and stopped", err, i)
+		}
+	})
+}

@@ -3,6 +3,7 @@ package chromecast
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -97,9 +98,9 @@ func (w *playback) observe(status castmedia.Media) (bool, error) {
 		switch status.IdleReason {
 		case idleError:
 			if w.active {
-				return true, fmt.Errorf("chromecast playback ended with receiver error")
+				return true, errors.New("chromecast playback ended with receiver error")
 			}
-			return true, fmt.Errorf("chromecast refused the media: the receiver went idle with an error before playback began")
+			return true, errors.New("chromecast refused the media: the receiver went idle with an error before playback began")
 		case "FINISHED", "CANCELLED", "INTERRUPTED":
 			return w.active, nil
 		}

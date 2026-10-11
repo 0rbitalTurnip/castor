@@ -4,38 +4,19 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/url"
-
-	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
-
-	"github.com/stupside/castor/services/apiserver/internal/device"
 )
 
-// servedHeaders are the headers a DLNA device expects on a response of container.
-func servedHeaders(container mediav1.Container) map[string]string {
-	return map[string]string{
-		"Connection":               "close",
-		"Accept-Ranges":            "none",
-		"transferMode.dlna.org":    "Streaming",
-		"contentFeatures.dlna.org": contentFeatures(container),
+// servedHeaders are the headers a DLNA device expects on a response its sink entry describes.
+func servedHeaders(entry sinkEntry) map[string]string {
+	headers := map[string]string{
+		"Connection":            "close",
+		"Accept-Ranges":         "none",
+		"transferMode.dlna.org": "Streaming",
 	}
-}
-
-// DLNA.ORG_FLAGS advertised for a live stream and for a whole file.
-const (
-	flagsLive = "8D300000000000000000000000000000"
-	flagsFile = "01300000000000000000000000000000"
-)
-
-// contentFeatures is the DLNA PN and FLAGS a container is announced with.
-func contentFeatures(container mediav1.Container) string {
-	name, flags := "", flagsLive
-	switch container {
-	case mediav1.Container_CONTAINER_MPEGTS:
-		name = "MPEG_TS_HD_NA_ISO"
-	case mediav1.Container_CONTAINER_MP4:
-		name, flags = "AVC_MP4_HP_HD_AAC", flagsFile
+	if entry.features != "*" {
+		headers["contentFeatures.dlna.org"] = entry.features
 	}
-	return fmt.Sprintf("DLNA.ORG_PN=%s;DLNA.ORG_OP=00;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=%s", name, flags)
+	return headers
 }
 
 type didlLite struct {
@@ -60,8 +41,8 @@ type didlRes struct {
 	Value        string `xml:",chardata"`
 }
 
-// buildDIDLMetadata returns the DIDL-Lite XML the device needs to play streamURL.
-func buildDIDLMetadata(streamURL *url.URL, container mediav1.Container) (string, error) {
+// buildDIDLMetadata returns the DIDL-Lite XML announcing streamURL as the device's own sink entry describes it.
+func buildDIDLMetadata(streamURL *url.URL, entry sinkEntry) (string, error) {
 	item := didlLite{
 		XMLNS: "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/",
 		DC:    "http://purl.org/dc/elements/1.1/",
@@ -73,7 +54,7 @@ func buildDIDLMetadata(streamURL *url.URL, container mediav1.Container) (string,
 			Title:      "Castor Stream",
 			Class:      "object.item.videoItem",
 			Res: didlRes{
-				ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", device.MIME(container), contentFeatures(container)),
+				ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", entry.mime, entry.features),
 				Value:        streamURL.String(),
 			},
 		},

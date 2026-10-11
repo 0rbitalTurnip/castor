@@ -2,6 +2,7 @@ package roku
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -72,10 +73,31 @@ func (s *session) Play(ctx context.Context, streamURL *url.URL, container mediav
 	return nil
 }
 
-// Pause presses Play, the one ECP key there is for both: the channel toggles between playing and paused.
-func (s *session) Pause(ctx context.Context) error { return s.keypress(ctx, "Play") }
+// statePause is what /query/media-player reports of a paused player.
+const statePause = "pause"
 
-func (s *session) Resume(ctx context.Context) error { return s.keypress(ctx, "Play") }
+func playing(state string) bool { return state == "play" || state == "buffer" || state == "startup" }
+
+func over(state string) bool { return state == "close" || state == "stop" || state == "none" }
+
+// Pause holds the player paused; ECP has one Play key for both, so it presses it only when the player is playing.
+func (s *session) Pause(ctx context.Context) error { return s.hold(ctx, true) }
+
+func (s *session) Resume(ctx context.Context) error { return s.hold(ctx, false) }
+
+func (s *session) hold(ctx context.Context, paused bool) error {
+	state, err := s.playerState(ctx)
+	if err != nil {
+		return err
+	}
+	switch {
+	case paused && state == statePause, !paused && playing(state):
+		return nil
+	case paused && playing(state), !paused && state == statePause:
+		return s.keypress(ctx, "Play")
+	}
+	return fmt.Errorf("roku player is %q, with nothing to pause or resume", state)
+}
 
 func (s *session) keypress(ctx context.Context, key string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.ecp.JoinPath("keypress", key).String(), nil)
@@ -93,26 +115,37 @@ func (s *session) keypress(ctx context.Context, key string) error {
 	return nil
 }
 
+// Stop leaves the channel for the home screen, which ends its playback.
+func (s *session) Stop(ctx context.Context) error { return s.keypress(ctx, "Home") }
+
 const mediaPlayerQuery = "/query/media-player"
 
-// AwaitEnd answers exactly ONE of the two things an ECP poll could establish.
-func (s *session) AwaitEnd(ctx context.Context) error {
-	return device.AwaitPolledEnd(ctx, s.name, mediaPlayerQuery, s.mediaPlayerAnswered)
+// playerState is the state /query/media-player reports.
+func (s *session) playerState(ctx context.Context) (string, error) {
+	body, err := get(ctx, s.hc, s.ecp.JoinPath(mediaPlayerQuery), 1<<16)
+	if err != nil {
+		return "", err
+	}
+	var player struct {
+		State string `xml:"state,attr"`
+	}
+	if err := xml.Unmarshal(body, &player); err != nil {
+		return "", fmt.Errorf("decoding roku player state: %w", err)
+	}
+	return player.State, nil
 }
 
-// mediaPlayerAnswered reports only that somebody answered, never that playback is over (see AwaitEnd).
-func (s *session) mediaPlayerAnswered(ctx context.Context) (bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.ecp.JoinPath(mediaPlayerQuery).String(), nil)
-	if err != nil {
-		return false, err
-	}
-	resp, err := s.hc.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-	return false, nil
+// AwaitEnd polls the player until it closes or stops after having played.
+func (s *session) AwaitEnd(ctx context.Context) error {
+	var active bool
+	return device.AwaitPolledEnd(ctx, s.name, mediaPlayerQuery, func(ctx context.Context) (bool, error) {
+		state, err := s.playerState(ctx)
+		if err != nil {
+			return false, err
+		}
+		active = active || playing(state) || state == statePause
+		return active && over(state), nil
+	})
 }
 
 // Capabilities describes what Castor's channel plays.

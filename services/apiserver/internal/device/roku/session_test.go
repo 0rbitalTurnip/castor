@@ -1,6 +1,7 @@
 package roku
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -93,5 +94,69 @@ func TestRokuAnswersWhenTheCastEnds(t *testing.T) {
 	})
 	if ecp.polls.Load() == 0 {
 		t.Error("the suite never polled the Roku")
+	}
+}
+
+// scriptedECP answers each media-player query with the next state, the last one repeating, and records the keys pressed.
+type scriptedECP struct {
+	states []string
+	polls  int
+	keys   []string
+}
+
+func (e *scriptedECP) RoundTrip(r *http.Request) (*http.Response, error) {
+	if key, ok := strings.CutPrefix(r.URL.Path, "/keypress/"); ok {
+		e.keys = append(e.keys, key)
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	}
+	state := e.states[min(e.polls, len(e.states)-1)]
+	e.polls++
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`<player error="false" state="` + state + `"/>`))}, nil
+}
+
+func scriptedSession(ecp *scriptedECP) *session {
+	return &session{ecp: &url.URL{Scheme: "http", Host: "192.0.2.10:8060"}, name: "Bedroom Roku", hc: &http.Client{Transport: ecp}}
+}
+
+func TestRokuEndsWhenThePlayerClosesAfterPlaying(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ecp := &scriptedECP{states: []string{"none", "startup", "buffer", "play", "pause", "play", "close"}}
+		if err := scriptedSession(ecp).AwaitEnd(t.Context()); err != nil {
+			t.Fatalf("AwaitEnd = %v, want a clean end", err)
+		}
+		if ecp.polls != len(ecp.states) {
+			t.Errorf("polled %d times, want %d: a player that has not played yet is not over", ecp.polls, len(ecp.states))
+		}
+	})
+}
+
+func TestRokuPauseAndResumePressPlayOnlyWhenTheStateCallsForIt(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		state string
+		do    func(*session) error
+		keys  int
+		fails bool
+	}{
+		{"pausing a playing player", "play", func(s *session) error { return s.Pause(context.Background()) }, 1, false},
+		{"pausing a paused player", "pause", func(s *session) error { return s.Pause(context.Background()) }, 0, false},
+		{"resuming a paused player", "pause", func(s *session) error { return s.Resume(context.Background()) }, 1, false},
+		{"resuming a playing player", "play", func(s *session) error { return s.Resume(context.Background()) }, 0, false},
+		{"pausing a closed player", "close", func(s *session) error { return s.Pause(context.Background()) }, 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ecp := &scriptedECP{states: []string{tt.state}}
+			err := tt.do(scriptedSession(ecp))
+			if (err != nil) != tt.fails || len(ecp.keys) != tt.keys {
+				t.Errorf("err = %v, keys = %v, want %d key(s) and failure %v", err, ecp.keys, tt.keys, tt.fails)
+			}
+		})
+	}
+}
+
+func TestRokuStopLeavesForHome(t *testing.T) {
+	ecp := &scriptedECP{states: []string{"play"}}
+	if err := scriptedSession(ecp).Stop(t.Context()); err != nil || len(ecp.keys) != 1 || ecp.keys[0] != "Home" {
+		t.Errorf("Stop = %v with keys %v, want Home", err, ecp.keys)
 	}
 }

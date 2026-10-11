@@ -43,7 +43,7 @@ func write(t *testing.T, yaml, local string) string {
 
 func TestTheOverlayThenTheEnvironmentWinOverTheFileAndTheDefaults(t *testing.T) {
 	path := write(t, "cast:\n  max_height: 1080\nnetwork:\n  timeout: 2s\n", "cast:\n  max_height: 720\n")
-	got, err := Read(path, defaulted())
+	got, err := read(path, defaulted())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestTheOverlayThenTheEnvironmentWinOverTheFileAndTheDefaults(t *testing.T) 
 	}
 
 	t.Setenv("CASTOR_CAST__MAX_HEIGHT", "480")
-	if got, err = Read(path, defaulted()); err != nil {
+	if got, err = read(path, defaulted()); err != nil {
 		t.Fatal(err)
 	}
 	if got.Cast.MaxHeight != 480 {
@@ -61,7 +61,7 @@ func TestTheOverlayThenTheEnvironmentWinOverTheFileAndTheDefaults(t *testing.T) 
 }
 
 func TestNoFileLeavesTheDefaults(t *testing.T) {
-	got, err := Read(filepath.Join(t.TempDir(), "config.yaml"), defaulted())
+	got, err := read(filepath.Join(t.TempDir(), "config.yaml"), defaulted())
 	if err != nil || got.Network.Timeout != 5*time.Second {
 		t.Errorf("read %+v %v without a file, want the defaults", got, err)
 	}
@@ -69,7 +69,7 @@ func TestNoFileLeavesTheDefaults(t *testing.T) {
 
 func TestAnUnreadableConfigPathIsNotTreatedAsAMissingFile(t *testing.T) {
 	path := write(t, "network:\n  timeout: 2s\n", "")
-	if _, err := Read(filepath.Join(path, "config.yaml"), defaulted()); err == nil {
+	if _, err := read(filepath.Join(path, "config.yaml"), defaulted()); err == nil {
 		t.Error("a path through a regular file was ignored instead of reporting the filesystem error")
 	}
 }

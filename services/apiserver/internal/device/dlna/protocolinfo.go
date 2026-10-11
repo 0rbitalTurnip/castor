@@ -2,6 +2,8 @@ package dlna
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -14,15 +16,20 @@ import (
 	"github.com/stupside/castor/services/apiserver/internal/device"
 )
 
-// capsTimeout: ConnectionManager timeout; degrades rather than stall.
+// capsTimeout bounds the ConnectionManager question a Connect asks.
 const capsTimeout = 3 * time.Second
 
-// negotiateCaps asks the device what it accepts over ConnectionManager GetProtocolInfo.
-func negotiateCaps(ctx context.Context, loc *goupnp.RootDevice, u *url.URL) *mediav1.Capabilities {
+// sinkEntry is how the device itself names a container it accepts: the MIME and fourth field of its sink protocolInfo.
+type sinkEntry struct {
+	mime     string
+	features string
+}
+
+// negotiateCaps asks the device what it accepts over ConnectionManager GetProtocolInfo, refusing a device that does not say.
+func negotiateCaps(ctx context.Context, loc *goupnp.RootDevice, u *url.URL) (*mediav1.Capabilities, map[mediav1.Container]sinkEntry, error) {
 	manager, err := findService(loc, u, "ConnectionManager")
 	if err != nil {
-		slog.WarnContext(ctx, "no ConnectionManager service; using conservative capabilities", "error", err)
-		return fallbackCaps()
+		return nil, nil, fmt.Errorf("the device cannot say what it plays: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, capsTimeout)
 	defer cancel()
@@ -30,23 +37,19 @@ func negotiateCaps(ctx context.Context, loc *goupnp.RootDevice, u *url.URL) *med
 	response := &struct{ Source, Sink string }{}
 	if err := manager.SOAPClient.PerformActionCtx(
 		ctx, manager.Service.ServiceType, "GetProtocolInfo", nil, response); err != nil {
-		slog.WarnContext(ctx, "GetProtocolInfo failed; using conservative capabilities", "error", err)
-		return fallbackCaps()
+		return nil, nil, fmt.Errorf("asking the device what it plays: %w", err)
 	}
-	sink := response.Sink
-	caps := parseSinkProtocolInfo(sink)
-	if len(caps.Video) == 0 {
-		slog.WarnContext(ctx, "device advertised no known video codec; using conservative capabilities")
-		return fallbackCaps()
-	}
-	// A nil Audio is not a device that plays silence, it is one that said nothing about audio.
-	if len(caps.Audio) == 0 {
-		slog.WarnContext(ctx, "device advertised no known audio codec; assuming the conservative audio floor",
-			"codecs", codecs(caps.Video))
-		caps.Audio = fallbackCaps().Audio
+	caps, sinks := parseSinkProtocolInfo(response.Sink)
+	switch {
+	case len(caps.Video) == 0:
+		return nil, nil, errors.New("the device advertises no H.264 or HEVC video in its sink")
+	case len(caps.Audio) == 0:
+		return nil, nil, errors.New("the device advertises no AAC, AC-3 or E-AC-3 audio in its sink")
+	case len(caps.Containers) == 0:
+		return nil, nil, errors.New("the device advertises neither MPEG-TS nor MP4 in its sink")
 	}
 	slog.InfoContext(ctx, "negotiated device capabilities", "codecs", codecs(caps.Video), "containers", caps.Containers)
-	return caps
+	return caps, sinks, nil
 }
 
 // audioSupportFor builds the copy envelope for an audio codec.
@@ -64,47 +67,39 @@ var (
 	discoverableContainers  = []mediav1.Container{mediav1.Container_CONTAINER_MPEGTS, mediav1.Container_CONTAINER_MP4}
 )
 
-func fallbackCaps() *mediav1.Capabilities {
-	return &mediav1.Capabilities{
-		Containers:      []mediav1.Container{mediav1.Container_CONTAINER_MPEGTS},
-		Video:           []*mediav1.VideoSupport{device.VideoSupport(mediav1.VideoCodec_VIDEO_CODEC_H264)},
-		Audio:           []*mediav1.AudioSupport{audioSupportFor(mediav1.AudioCodec_AUDIO_CODEC_AAC)},
-		ServedContainer: servedContainer,
-		Deinterlaces:    true,
-	}
-}
-
-// servedContainer is what castor muxes for a DLNA media.
-const servedContainer = mediav1.Container_CONTAINER_MPEGTS
-
-// parseSinkProtocolInfo maps a ConnectionManager Sink protocolInfo CSV into capabilities.
-func parseSinkProtocolInfo(sink string) *mediav1.Capabilities {
+// parseSinkProtocolInfo maps a ConnectionManager Sink protocolInfo CSV into capabilities and the device's own entry per container.
+func parseSinkProtocolInfo(sink string) (*mediav1.Capabilities, map[mediav1.Container]sinkEntry) {
 	present := map[mediav1.VideoCodec]bool{}
 	audioPresent := map[mediav1.AudioCodec]bool{}
-	containers := map[mediav1.Container]bool{}
+	sinks := map[mediav1.Container]sinkEntry{}
 	for entry := range strings.SplitSeq(sink, ",") {
 		fields := strings.SplitN(strings.TrimSpace(entry), ":", 4)
 		if len(fields) < 3 || !strings.EqualFold(fields[0], "http-get") {
 			continue
 		}
 		mime := strings.ToLower(fields[2])
-		info := ""
+		features := "*"
 		if len(fields) == 4 {
-			info = strings.ToUpper(fields[3])
+			features = fields[3]
 		}
-		if c, ok := codecFromProfile(mime, info); ok {
-			present[c] = true
+		info := strings.ToUpper(features)
+		codec, hasCodec := codecFromProfile(mime, info)
+		if hasCodec {
+			present[codec] = true
 		}
 		if c, ok := audioFromProfile(mime, info); ok {
 			audioPresent[c] = true
 		}
+		// The first entry naming a codec speaks for its container, else the first there is.
 		if ct, ok := containerFromMIME(mime); ok {
-			containers[ct] = true
+			if _, seen := sinks[ct]; !seen || hasCodec && !hasKnownCodec(sinks[ct]) {
+				sinks[ct] = sinkEntry{mime: fields[2], features: features}
+			}
 		}
 	}
 
 	// A DLNA device deinterlaces: broadcast reaches it as fields.
-	r := &mediav1.Capabilities{ServedContainer: servedContainer, Deinterlaces: true}
+	r := &mediav1.Capabilities{Deinterlaces: true}
 	for _, c := range discoverableCodecs {
 		if present[c] {
 			r.Video = append(r.Video, device.VideoSupport(c))
@@ -116,11 +111,20 @@ func parseSinkProtocolInfo(sink string) *mediav1.Capabilities {
 		}
 	}
 	for _, ct := range discoverableContainers {
-		if containers[ct] {
+		if _, ok := sinks[ct]; ok {
 			r.Containers = append(r.Containers, ct)
 		}
 	}
-	return r
+	if len(r.Containers) > 0 {
+		r.ServedContainer = r.Containers[0]
+	}
+	return r, sinks
+}
+
+// hasKnownCodec is whether entry names a codec castor produces.
+func hasKnownCodec(entry sinkEntry) bool {
+	_, ok := codecFromProfile(strings.ToLower(entry.mime), strings.ToUpper(entry.features))
+	return ok
 }
 
 // codecFromProfile reads the DLNA.ORG_PN token (already upper-cased), failing that the MIME type.
@@ -149,7 +153,7 @@ func audioFromProfile(mime, pn string) (mediav1.AudioCodec, bool) {
 // containerFromMIME reads the DLNA MIME spellings of the containers castor serves.
 func containerFromMIME(mime string) (mediav1.Container, bool) {
 	switch mime {
-	case "video/mp2t", "video/mpeg", "video/vnd.dlna.mpeg-tts", "video/x-mpegts":
+	case "video/mp2t", "video/vnd.dlna.mpeg-tts", "video/x-mpegts":
 		return mediav1.Container_CONTAINER_MPEGTS, true
 	case "video/mp4":
 		return mediav1.Container_CONTAINER_MP4, true

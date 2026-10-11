@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sync/atomic"
+	"time"
 
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 )
+
+// stopTimeout bounds the stop a closing cast sends its device.
+const stopTimeout = 3 * time.Second
 
 // reconnecting is the device a cast lends, so later attempts still reach it after its connection is gone.
 type reconnecting struct {
@@ -57,12 +62,23 @@ func (r *reconnecting) Resume(ctx context.Context) error {
 	return dev.Resume(ctx)
 }
 
+func (r *reconnecting) Stop(ctx context.Context) error {
+	dev, _ := r.current()
+	return dev.Stop(ctx)
+}
+
 func (r *reconnecting) Capabilities() *mediav1.Capabilities {
 	dev, _ := r.current()
 	return dev.Capabilities()
 }
 
+// Close stops the device, then lets go of it; a device already gone or stopped has nothing left to stop.
 func (r *reconnecting) Close() error {
+	stopping, cancel := context.WithTimeout(context.Background(), stopTimeout)
+	defer cancel()
+	if err := r.Stop(stopping); err != nil {
+		slog.Debug("stopping the device on close", "error", err)
+	}
 	dev, _ := r.current()
 	return dev.Close()
 }

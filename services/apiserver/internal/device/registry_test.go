@@ -29,7 +29,7 @@ func TestAPinnedDeviceWithNoNameIsNamedByItsHost(t *testing.T) {
 		{Info{Type: "push", Address: "http://192.168.0.5:9197/desc.xml"}, "192.168.0.5"},
 		{Info{Type: "push", Address: "192.168.0.3:8060", Name: "Bedroom"}, "Bedroom"},
 	} {
-		info, err := locate(t.Context(), stub{}, tt.target, time.Second)
+		info, err := locate(t.Context(), stub{}, tt.target)
 		if err != nil {
 			t.Fatalf("locate(%+v) error = %v", tt.target, err)
 		}

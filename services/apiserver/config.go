@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -23,10 +24,22 @@ type Config struct {
 
 // CastConfig is what every cast asks unless its request says otherwise; New holds it to the contract's rules.
 type CastConfig struct {
-	Delivery  string `yaml:"delivery"`
-	MaxHeight uint32 `yaml:"max_height"`
+	Delivery  Delivery `yaml:"delivery"`
+	MaxHeight uint32   `yaml:"max_height"`
 	// Subtitles is the language to burn in, a whisper code or auto to detect it, empty for none.
 	Subtitles string `yaml:"subtitles"`
+}
+
+// Delivery is how a cast reaches the device, spelled in configuration as the contract names it, such as auto.
+type Delivery castorv1.Delivery
+
+func (d *Delivery) UnmarshalText(text []byte) error {
+	v, ok := castorv1.Delivery_value["DELIVERY_"+strings.ToUpper(string(text))]
+	if !ok {
+		return fmt.Errorf("unknown delivery %q", text)
+	}
+	*d = Delivery(v)
+	return nil
 }
 
 // APIConfig is where `castor api-server` listens, and the token it asks every request to carry.
@@ -53,7 +66,7 @@ type DevicesConfig struct {
 
 func defaults() Config {
 	return Config{
-		Cast:    CastConfig{Delivery: "auto", MaxHeight: 1080},
+		Cast:    CastConfig{Delivery: Delivery(castorv1.Delivery_DELIVERY_AUTO), MaxHeight: 1080},
 		API:     APIConfig{Listen: ":8411"},
 		Network: NetworkConfig{Timeout: 5 * time.Second},
 	}
@@ -71,7 +84,7 @@ func (c CastConfig) settings() *mediav1.PlaybackSettings {
 		subtitles.Mode = &castorv1.SubtitleSelection_Language{Language: c.Subtitles}
 	}
 	return &mediav1.PlaybackSettings{
-		Delivery:  castorv1.Delivery(castorv1.Delivery_value["DELIVERY_"+strings.ToUpper(c.Delivery)]),
+		Delivery:  castorv1.Delivery(c.Delivery),
 		MaxHeight: c.MaxHeight,
 		Subtitles: subtitles,
 	}

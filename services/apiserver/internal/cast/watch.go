@@ -11,6 +11,9 @@ import (
 	"github.com/stupside/castor/services/apiserver/internal/mediaclient"
 )
 
+// drainGrace is how long a finished cast waits for the media server's remaining lines.
+const drainGrace = 5 * time.Second
+
 // Watch sends the cast's status at once and on every change, its lines if asked, and how it ended last.
 func (s *Service) Watch(ctx context.Context, req *castorv1.WatchRequest, out *connect.ServerStream[castorv1.WatchResponse]) error {
 	c, err := s.find(req.GetCastId())
@@ -38,7 +41,7 @@ func (s *Service) Watch(ctx context.Context, req *castorv1.WatchRequest, out *co
 		}
 		if now.ended != nil {
 			// Lines logged before the end go out before it does, for as long as the media server takes to send them.
-			drained := time.After(stopGrace)
+			drained := time.After(drainGrace)
 			for lines != nil {
 				select {
 				case <-ctx.Done():

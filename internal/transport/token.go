@@ -19,7 +19,7 @@ func Authorized(h http.Handler, token string) http.Handler {
 	health := "/" + grpchealth.HealthV1ServiceName + "/"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		scheme, got, _ := strings.Cut(r.Header.Get("Authorization"), " ")
-		if strings.HasPrefix(r.URL.Path, health) || strings.EqualFold(scheme, "Bearer") && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 {
+		if strings.HasPrefix(r.URL.Path, health) || (strings.EqualFold(scheme, "Bearer") && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1) {
 			h.ServeHTTP(w, r)
 			return
 		}

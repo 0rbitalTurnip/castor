@@ -97,13 +97,22 @@ func (s *Service) run(ctx context.Context, c *cast, target device.Info, asked *m
 	defer unwatch()
 	stopMedia := s.stopper(ctx, media, watching)
 	defer context.AfterFunc(ctx, stopMedia)()
-	defer context.AfterFunc(ctx, func() { time.AfterFunc(stopGrace, unwatch) })()
+	returned := make(chan struct{})
+	defer close(returned)
+	defer context.AfterFunc(ctx, func() {
+		select {
+		case <-time.After(stopGrace):
+			unwatch()
+		case <-returned:
+		}
+	})()
 
 	// The device is driven until the media server's cast ends, through its teardown too.
 	driving, leave := context.WithCancel(context.WithoutCancel(ctx))
 	var wg sync.WaitGroup
 	if ctx.Err() == nil {
 		wg.Go(func() {
+			// A lost drive ends the cast: the device is no longer lent, and a device's own failures reach the media server as answers.
 			if err := s.media.Drive(driving, media, lent, c.device); err != nil && driving.Err() == nil {
 				c.stop(&castFailure{code: castorv1.FailureCode_FAILURE_CODE_INTERNAL, err: fmt.Errorf("driving the device: %w", err)})
 			}

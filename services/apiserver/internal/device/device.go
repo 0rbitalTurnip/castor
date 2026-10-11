@@ -25,6 +25,9 @@ type Device interface {
 	Pause(ctx context.Context) error
 	Resume(ctx context.Context) error
 
+	// Stop ends what the device plays, so a cast that ends while the device still fetches from elsewhere does not leave it playing.
+	Stop(ctx context.Context) error
+
 	Capabilities() *mediav1.Capabilities
 
 	Close() error
@@ -67,13 +70,12 @@ func (i Info) Public() *castorv1.Device {
 	return &castorv1.Device{Id: i.id(), Name: i.Name, Type: i.Type.public(), Address: i.Address}
 }
 
-var publicTypes = map[Type]castorv1.DeviceType{
-	"dlna":       castorv1.DeviceType_DEVICE_TYPE_DLNA,
-	"chromecast": castorv1.DeviceType_DEVICE_TYPE_CHROMECAST,
-	"roku":       castorv1.DeviceType_DEVICE_TYPE_ROKU,
+// public is the contract's name for t, which spells it as the enum's name without its prefix.
+func (t Type) public() castorv1.DeviceType {
+	return castorv1.DeviceType(castorv1.DeviceType_value[deviceTypePrefix+strings.ToUpper(string(t))])
 }
 
-func (t Type) public() castorv1.DeviceType { return publicTypes[t] }
+const deviceTypePrefix = "DEVICE_TYPE_"
 
 // WithPort completes a bare host, bracketed or not, with a family's default port.
 func WithPort(address, port string) string {

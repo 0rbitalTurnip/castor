@@ -119,8 +119,11 @@ func parseDeviceInfoName(body []byte) string {
 
 func (f Family) Connect(ctx context.Context, info device.Info) (device.Device, error) {
 	root, err := url.Parse(info.Address)
-	if err != nil || root.Host == "" {
+	if err != nil {
 		return nil, fmt.Errorf("parsing roku address %q: %w", info.Address, err)
+	}
+	if root.Host == "" {
+		return nil, fmt.Errorf("roku address %q has no host", info.Address)
 	}
 
 	dev := &session{

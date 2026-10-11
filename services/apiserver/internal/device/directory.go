@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -55,12 +56,11 @@ func (d *Directory) Target(ctx context.Context, t *castorv1.Target) (Info, error
 }
 
 func requestedType(t castorv1.DeviceType) (Type, error) {
-	for kind, public := range publicTypes {
-		if public == t {
-			return kind, nil
-		}
+	name, ok := strings.CutPrefix(t.String(), deviceTypePrefix)
+	if !ok || t == castorv1.DeviceType_DEVICE_TYPE_UNSPECIFIED {
+		return "", fmt.Errorf("unknown device type: %v", t)
 	}
-	return "", fmt.Errorf("unknown device type: %v", t)
+	return Type(strings.ToLower(name)), nil
 }
 
 // Connect opens target for one cast, which holds it to its end; a Play that finds it gone connects it again.

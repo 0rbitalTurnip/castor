@@ -24,6 +24,8 @@ const actionTimeout = 10 * time.Second
 type session struct {
 	transport goupnp.ServiceClient
 	caps      *mediav1.Capabilities
+	// sinks is how the device names each container it accepts.
+	sinks map[mediav1.Container]sinkEntry
 }
 
 func (s *session) Capabilities() *mediav1.Capabilities { return s.caps }
@@ -49,7 +51,11 @@ const (
 
 // Play hands over one video resource with no caption track: subtitles are burned in upstream.
 func (s *session) Play(ctx context.Context, streamURL *url.URL, container mediav1.Container) error {
-	metadata, err := buildDIDLMetadata(streamURL, container)
+	entry, ok := s.sinks[container]
+	if !ok {
+		return fmt.Errorf("the device does not advertise container %v", container)
+	}
+	metadata, err := buildDIDLMetadata(streamURL, entry)
 	if err != nil {
 		return fmt.Errorf("building DIDL-Lite metadata: %w", err)
 	}
@@ -124,20 +130,31 @@ func (s *session) action(ctx context.Context, name string, request any) error {
 
 const transportQuery = "GetTransportInfo"
 
+// idlePolls is how many polls in a row a device may sit stopped with nothing playing before it is taken to have refused the stream.
+const idlePolls = 15
+
 // transportWatch holds the one thing that ends a cast from the device's side.
 type transportWatch struct {
 	active bool
+	idle   int
 }
 
+// observe reports whether the cast is over: the device stopped after playing, or never played at all.
 func (w *transportWatch) observe(state string) bool {
 	switch state {
 	case "PLAYING", "PAUSED_PLAYBACK", "RECORDING":
 		w.active = true
+		w.idle = 0
 	case "STOPPED", "NO_MEDIA_PRESENT":
-		return w.active
+		w.idle++
+		return w.active || w.refused()
+	default:
+		w.idle = 0
 	}
 	return false
 }
+
+func (w *transportWatch) refused() bool { return !w.active && w.idle >= idlePolls }
 
 // AwaitEnd polls AVTransport because UPnP families share no dependable event subscription.
 func (s *session) AwaitEnd(ctx context.Context) error {
@@ -147,7 +164,7 @@ func (s *session) AwaitEnd(ctx context.Context) error {
 // awaitTransportEnd folds the AVTransport state machine over the shared poll loop.
 func awaitTransportEnd(ctx context.Context, name string, poll func(context.Context) (string, error)) error {
 	var watch transportWatch
-	return device.AwaitPolledEnd(ctx, name, transportQuery,
+	err := device.AwaitPolledEnd(ctx, name, transportQuery,
 		func(ctx context.Context) (bool, error) {
 			state, err := poll(ctx)
 			if err != nil {
@@ -155,6 +172,10 @@ func awaitTransportEnd(ctx context.Context, name string, poll func(context.Conte
 			}
 			return watch.observe(state), nil
 		})
+	if err == nil && watch.refused() {
+		return fmt.Errorf("the device refused the stream: it stayed stopped for %d polls without playing", idlePolls)
+	}
+	return err
 }
 
 func (s *session) transportState(ctx context.Context) (string, error) {
@@ -167,6 +188,14 @@ func (s *session) transportState(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return response.CurrentTransportState, nil
+}
+
+// Stop ends whatever the device is playing.
+func (s *session) Stop(ctx context.Context) error {
+	if err := s.action(ctx, "Stop", &struct{ InstanceID string }{"0"}); err != nil {
+		return fmt.Errorf("stopping playback: %w", err)
+	}
+	return nil
 }
 
 func (s *session) Close() error {

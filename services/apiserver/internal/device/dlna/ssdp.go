@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/stupside/castor/services/apiserver/internal/device"
 )
@@ -13,8 +12,6 @@ import (
 const (
 	searchTarget = "urn:schemas-upnp-org:device:MediaRenderer:1"
 	ssdpPort     = "1900"
-	// msearchTimeout bounds the unicast M-SEARCH when the caller sets no deadline.
-	msearchTimeout = 3 * time.Second
 )
 
 // searchDescription: unicast M-SEARCH for description (no interface enumeration).
@@ -27,16 +24,9 @@ func searchDescription(ctx context.Context, host string) (string, error) {
 		return "", fmt.Errorf("dialing %s: %w", target, err)
 	}
 	defer conn.Close()
+	// Closing the connection on ctx is what ends a read at its deadline too.
 	stopCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopCancel()
-
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(msearchTimeout)
-	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		return "", err
-	}
 
 	msearch := strings.Join([]string{
 		"M-SEARCH * HTTP/1.1",

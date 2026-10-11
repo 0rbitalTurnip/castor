@@ -80,7 +80,10 @@ func (s *session) Pause(ctx context.Context) error { return s.transportCommand(c
 
 func (s *session) Resume(ctx context.Context) error { return s.transportCommand(ctx, msgPlay) }
 
-// transportCommand sends PAUSE or PLAY to the media session the last Play opened.
+// Stop ends the media session the last Play opened, if the receiver reported one.
+func (s *session) Stop(ctx context.Context) error { return s.transportCommand(ctx, msgStop) }
+
+// transportCommand sends PAUSE, PLAY or STOP to the media session the last Play opened.
 func (s *session) transportCommand(ctx context.Context, msg string) error {
 	s.watchMu.Lock()
 	transport, mediaSession := s.transport, s.watch.mediaSession
@@ -88,7 +91,7 @@ func (s *session) transportCommand(ctx context.Context, msg string) error {
 	if mediaSession == 0 {
 		return fmt.Errorf("%s: the chromecast has reported no media session yet", msg)
 	}
-	reply, err := s.ch.request(ctx, transport, nsMedia, &castmedia.MediaHeader{PayloadHeader: castmedia.PayloadHeader{Type: msg}, MediaSessionId: mediaSession})
+	reply, err := s.ch.request(ctx, transport, nsMedia, &castmedia.MediaHeader{Type: msg, MediaSessionId: mediaSession})
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}

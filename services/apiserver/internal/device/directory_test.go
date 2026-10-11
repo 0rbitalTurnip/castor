@@ -69,5 +69,6 @@ func TestADeviceThatMovedSinceItWasListedIsFoundAgainToConnect(t *testing.T) {
 	}
 }
 
+func (idle) Stop(context.Context) error   { return nil }
 func (idle) Pause(context.Context) error  { return nil }
 func (idle) Resume(context.Context) error { return nil }

@@ -86,9 +86,12 @@ func (Family) Connect(ctx context.Context, info device.Info) (device.Device, err
 	if err != nil {
 		return nil, fmt.Errorf("creating AVTransport client: %w", err)
 	}
-	caps := negotiateCaps(ctx, loc, u)
-	caps.ServedHeaders = servedHeaders(caps.ServedContainer)
-	return &session{transport: transport, caps: caps}, nil
+	caps, sinks, err := negotiateCaps(ctx, loc, u)
+	if err != nil {
+		return nil, err
+	}
+	caps.ServedHeaders = servedHeaders(sinks[caps.ServedContainer])
+	return &session{transport: transport, caps: caps, sinks: sinks}, nil
 }
 
 // findService returns a client for the newest version of the named service the device publishes.

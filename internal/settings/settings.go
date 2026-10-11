@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,11 +34,11 @@ func Load[T any](cmd *cli.Command, defaults T) (*T, error) {
 			return nil, fmt.Errorf("config file: %w", err)
 		}
 	}
-	return Read(path, defaults)
+	return read(path, defaults)
 }
 
-// Read decodes over defaults the sections T declares, from the file at path when there is one, its .local overlay and the environment, then validates them.
-func Read[T any](path string, defaults T) (*T, error) {
+// read decodes over defaults the sections T declares, from the file at path when there is one, its .local overlay and the environment, then validates them.
+func read[T any](path string, defaults T) (*T, error) {
 	k := koanf.New(".")
 	local := strings.TrimSuffix(path, filepath.Ext(path)) + ".local" + filepath.Ext(path)
 	for _, layer := range []string{path, local} {
@@ -75,7 +74,6 @@ func Read[T any](path string, defaults T) (*T, error) {
 	if err := validator.New().Struct(cfg); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
-	slog.Debug("config loaded", "path", path)
 	return cfg, nil
 }
 

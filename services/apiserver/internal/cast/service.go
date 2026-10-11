@@ -88,9 +88,20 @@ func (s *Service) Cast(ctx context.Context, req *castorv1.CastRequest) (*castorv
 		defer stop(nil)
 		ended := s.play(run, c, target, asked)
 		c.update(func(v *view) { v.ended = ended })
-		slog.Info("cast ended", "id", c.id, "device", cmp.Or(c.device.GetName(), c.device.GetAddress()), "completed", ended.GetCompleted() != nil, "stopped", ended.GetStopped() != nil, "failure", ended.GetFailed())
+		slog.Info("cast ended", "id", c.id, "device", cmp.Or(c.device.GetName(), c.device.GetAddress()), "result", result(ended))
 	}()
 	return &castorv1.CastResponse{CastId: c.id}, nil
+}
+
+// result names how a cast ended, a failure with its code and message.
+func result(ended *castorv1.Ended) string {
+	switch r := ended.GetResult().(type) {
+	case *castorv1.Ended_Completed:
+		return "completed"
+	case *castorv1.Ended_Failed:
+		return r.Failed.GetCode().String() + ": " + r.Failed.GetMessage()
+	}
+	return "stopped"
 }
 
 // Drain takes no new cast, ends every running one as the server shuts down, and waits for them to end, or for ctx.
@@ -146,9 +157,6 @@ func (s *Service) resolve(ctx context.Context, source *castorv1.Source) (*mediav
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("scrapingserver refused the API server (check scraping.token): %w", err))
 		}
 		return nil, err
-	}
-	if len(streams) == 0 {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no stream candidates found"))
 	}
 	return &mediav1.Source{Source: &mediav1.Source_Streams_{Streams: &mediav1.Source_Streams{Streams: streams}}}, nil
 }

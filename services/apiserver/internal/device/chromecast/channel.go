@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	castmedia "github.com/vishen/go-chromecast/cast"
@@ -26,6 +27,7 @@ const (
 	msgLoad        = "LOAD"
 	msgPause       = "PAUSE"
 	msgPlay        = "PLAY"
+	msgStop        = "STOP"
 	msgClose       = "CLOSE"
 	msgMediaStatus = "MEDIA_STATUS"
 	msgPing        = "PING"
@@ -46,6 +48,10 @@ const (
 	// A receiver answers LOAD only once its player has opened the media, which is not instant.
 	answerWithin = 20 * time.Second
 
+	// A receiver heard from in none of heartbeatMisses beats is gone, however open its socket looks.
+	heartbeatEvery  = 5 * time.Second
+	heartbeatMisses = 3
+
 	// The Cast v2 protocol caps a message at 64 KiB.
 	maxFrame = 64 << 10
 )
@@ -62,6 +68,9 @@ type channel struct {
 	mu      sync.Mutex
 	next    int
 	waiting map[int]chan []byte
+
+	// heard is when the receiver last sent anything, in unix nanoseconds.
+	heard atomic.Int64
 
 	gone      chan struct{}
 	closeConn func() error
@@ -81,8 +90,28 @@ func dial(ctx context.Context, address string, observe func([]byte)) (*channel, 
 func newChannel(conn net.Conn, observe func([]byte)) *channel {
 	ch := &channel{conn: conn, observe: observe, writing: make(chan struct{}, 1), waiting: map[int]chan []byte{}, gone: make(chan struct{})}
 	ch.closeConn = sync.OnceValue(conn.Close)
+	ch.heard.Store(time.Now().UnixNano())
 	go ch.read()
+	go ch.heartbeat()
 	return ch
+}
+
+// heartbeat pings the receiver every beat and drops the connection once it has said nothing for heartbeatMisses of them.
+func (ch *channel) heartbeat() {
+	ticker := time.NewTicker(heartbeatEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ch.gone:
+			return
+		case <-ticker.C:
+		}
+		if time.Since(time.Unix(0, ch.heard.Load())) > heartbeatMisses*heartbeatEvery {
+			_ = ch.closeConn()
+			return
+		}
+		_ = ch.send(context.Background(), receiverID, nsHeartbeat, &castmedia.PayloadHeader{Type: msgPing})
+	}
 }
 
 func (ch *channel) read() {
@@ -93,13 +122,16 @@ func (ch *channel) read() {
 		if err != nil {
 			return
 		}
+		ch.heard.Store(time.Now().UnixNano())
 		payload := []byte(msg.GetPayloadUtf8())
 		var header castmedia.PayloadHeader
 		if json.Unmarshal(payload, &header) != nil {
 			continue
 		}
-		if msg.GetNamespace() == nsHeartbeat && header.Type == msgPing {
-			_ = ch.send(context.Background(), msg.GetSourceId(), nsHeartbeat, &castmedia.PayloadHeader{Type: msgPong})
+		if msg.GetNamespace() == nsHeartbeat {
+			if header.Type == msgPing {
+				_ = ch.send(context.Background(), msg.GetSourceId(), nsHeartbeat, &castmedia.PayloadHeader{Type: msgPong})
+			}
 			continue
 		}
 		ch.observe(payload)

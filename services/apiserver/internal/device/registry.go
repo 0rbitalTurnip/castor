@@ -54,7 +54,7 @@ func (r Registry) Connect(ctx context.Context, target Info) (Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := locate(ctx, f, target, r.Timeout)
+	info, err := locate(ctx, f, target)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +67,7 @@ func (r Registry) Connect(ctx context.Context, target Info) (Device, error) {
 }
 
 // locate resolves target's address into the one its family dials, naming it by its host when it has no name.
-func locate(ctx context.Context, f Family, target Info, timeout time.Duration) (Info, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+func locate(ctx context.Context, f Family, target Info) (Info, error) {
 	address, err := f.Locate(ctx, target.Address)
 	if err != nil {
 		return Info{}, fmt.Errorf("locating device: %w", err)

@@ -16,17 +16,8 @@ import (
 	"github.com/stupside/castor/services/apiserver/internal/device"
 )
 
-// Device is the connected device a drive lends; its lender connected it and closes it.
-type Device interface {
-	Play(ctx context.Context, streamURL *url.URL, container mediav1.Container) error
-	AwaitEnd(ctx context.Context) error
-	Pause(ctx context.Context) error
-	Resume(ctx context.Context) error
-	Capabilities() *mediav1.Capabilities
-}
-
 // Drive lends lent, shown as named, to cast id for the whole cast, playing what the media server asks until the cast ends or ctx does.
-func (c *Client) Drive(parent context.Context, id string, lent Device, named *castorv1.Device) error {
+func (c *Client) Drive(parent context.Context, id string, lent device.Device, named *castorv1.Device) error {
 	// Leaving ends the stream and every call on the device; the cast plays on without it.
 	ctx, leave := context.WithCancelCause(parent)
 	defer leave(nil)
@@ -57,7 +48,7 @@ type driver struct {
 	leave  context.CancelCauseFunc
 	c      *Client
 	castID string
-	device Device
+	device device.Device
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc

@@ -137,7 +137,7 @@ type watching struct {
 }
 
 // cast starts a cast of one stream, lends it device and watches it to its end, returning what the watch saw and what the drive returned.
-func cast(t *testing.T, c *mediaclient.Client, lent mediaclient.Device) (watching, error) {
+func cast(t *testing.T, c *mediaclient.Client, lent device.Device) (watching, error) {
 	t.Helper()
 	id, err := c.Start(t.Context(), &mediav1.Source{Source: &mediav1.Source_Stream{Stream: &castorv1.Stream{Url: "https://cdn.example/direct"}}}, asked)
 	if err != nil {
@@ -217,5 +217,7 @@ func TestADeviceGoneIsAnsweredGoneSoTheCastsRecoveryReadsIt(t *testing.T) {
 	}
 }
 
+func (*lentDevice) Stop(context.Context) error   { return nil }
+func (*lentDevice) Close() error                 { return nil }
 func (*lentDevice) Pause(context.Context) error  { return nil }
 func (*lentDevice) Resume(context.Context) error { return nil }

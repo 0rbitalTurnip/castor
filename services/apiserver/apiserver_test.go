@@ -38,6 +38,8 @@ import (
 type family struct {
 	played chan string
 	closed chan int
+	// stops counts the stops the device was sent.
+	stops atomic.Int32
 	// unreachable is a device that answers no connection.
 	unreachable bool
 	// goneFirst is a device whose first connection is found gone at its first play.
@@ -321,7 +323,7 @@ type setup struct {
 	uncheckedMedia bool
 }
 
-var shipped = apiserver.CastConfig{Delivery: "auto", MaxHeight: 1080}
+var shipped = apiserver.CastConfig{Delivery: apiserver.Delivery(castorv1.Delivery_DELIVERY_AUTO), MaxHeight: 1080}
 
 // serve runs the media server's contract and the API server before it, as castor does, and returns a client of the API.
 func serve(t *testing.T, s setup) api {
@@ -658,7 +660,7 @@ func TestSubtitleModesOverrideOrInheritTheConfiguredLanguage(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := newMedia(false)
-			c := serve(t, setup{media: m, family: newFamily(), cast: apiserver.CastConfig{Delivery: "serve", MaxHeight: 720, Subtitles: "fr"}})
+			c := serve(t, setup{media: m, family: newFamily(), cast: apiserver.CastConfig{Delivery: apiserver.Delivery(castorv1.Delivery_DELIVERY_SERVE), MaxHeight: 720, Subtitles: "fr"}})
 			want := &mediav1.PlaybackSettings{Delivery: castorv1.Delivery_DELIVERY_SERVE, MaxHeight: 720, Subtitles: tc.want}
 			source := streamOf("https://cdn.example/direct")
 			if _, err := c.casts.Resolve(t.Context(), &castorv1.ResolveRequest{Source: source, Preferences: tc.preferences}); err != nil {
@@ -699,6 +701,9 @@ func TestBrokenMediaWatchStopsTheCast(t *testing.T) {
 	case <-f.closed:
 	default:
 		t.Error("a broken media watch left its device connected")
+	}
+	if f.stops.Load() != 1 {
+		t.Errorf("the device was sent %d stops as its cast ended, want 1", f.stops.Load())
 	}
 }
 
@@ -1022,6 +1027,11 @@ func TestAStopLostOnTheWayToTheMediaServerIsSentAgain(t *testing.T) {
 			t.Errorf("the cast ended %v, want stopped", w.ended)
 		}
 	})
+}
+
+func (c *connection) Stop(context.Context) error {
+	c.f.stops.Add(1)
+	return nil
 }
 
 func (*connection) Pause(context.Context) error  { return nil }

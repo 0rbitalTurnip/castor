@@ -6,12 +6,10 @@ import (
 	"errors"
 	"net/http"
 
-	"connectrpc.com/connect"
-	"connectrpc.com/validate"
-
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 	"github.com/stupside/castor/gen/castor/media/v1/mediav1connect"
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
+	"github.com/stupside/castor/internal/transport"
 )
 
 // Client is the media server's services, as the API server uses them.
@@ -23,7 +21,7 @@ type Client struct {
 
 // New reaches the media server at baseURL through client, which carries whatever credentials it asks.
 func New(client *http.Client, baseURL string) *Client {
-	valid := connect.WithInterceptors(validate.NewInterceptor(validate.WithValidateResponses()))
+	valid := transport.Checked()
 	return &Client{
 		casts:   mediav1connect.NewCastServiceClient(client, baseURL, valid),
 		devices: mediav1connect.NewDeviceServiceClient(client, baseURL, valid),
