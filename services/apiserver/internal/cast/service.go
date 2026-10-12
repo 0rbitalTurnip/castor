@@ -4,7 +4,6 @@ package cast
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +15,7 @@ import (
 
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
+	"github.com/stupside/castor/internal/castid"
 	"github.com/stupside/castor/internal/registry"
 	"github.com/stupside/castor/services/apiserver/internal/device"
 	"github.com/stupside/castor/services/apiserver/internal/mediaclient"
@@ -76,10 +76,11 @@ func (s *Service) Cast(ctx context.Context, req *castorv1.CastRequest) (*castorv
 		return nil, err
 	}
 	asked := s.asked(req.GetPreferences())
-	run, stop := context.WithCancelCause(s.ctx)
-	c := newCast(rand.Text(), target.Public(), proto.CloneOf(req.GetSource()), stop)
+	id := castid.New()
+	run, stop := context.WithCancelCause(castid.With(s.ctx, id))
+	c := newCast(id, target.Public(), proto.CloneOf(req.GetSource()), stop)
 	done := make(chan struct{})
-	if !s.casts.Add(c.id, c, done) {
+	if s.casts.Add(c.id, c, done) != nil {
 		stop(nil)
 		return nil, connect.NewError(connect.CodeUnavailable, errShutdown)
 	}
@@ -88,7 +89,7 @@ func (s *Service) Cast(ctx context.Context, req *castorv1.CastRequest) (*castorv
 		defer stop(nil)
 		ended := s.play(run, c, target, asked)
 		c.update(func(v *view) { v.ended = ended })
-		slog.Info("cast ended", "id", c.id, "device", cmp.Or(c.device.GetName(), c.device.GetAddress()), "result", result(ended))
+		slog.InfoContext(run, "cast ended", "device", cmp.Or(c.device.GetName(), c.device.GetAddress()), "result", result(ended))
 	}()
 	return &castorv1.CastResponse{CastId: c.id}, nil
 }

@@ -9,11 +9,9 @@ import { Scene } from "@/components/scene";
 import type { Mood } from "@/components/castor-logo";
 import { CastService, type CastStatus, type Ended } from "@/gen/castor/v1/cast_pb";
 import { RecoveryAction } from "@/gen/castor/v1/revision_pb";
-import { LogLevel, type LogLine } from "@/gen/castor/v1/log_pb";
 import { browserTransport } from "@/lib/browser";
 import { describe } from "@/lib/errors";
 import { StopButton } from "./stop-button";
-import { Diary } from "./diary";
 import { journey } from "./phases";
 import { watchUpdates } from "./watch-updates";
 
@@ -28,7 +26,6 @@ const recoveryActions: Record<RecoveryAction, string> = {
 
 export function WatchView({ castId }: { castId: string }) {
   const [status, setStatus] = useState<CastStatus>();
-  const [lines, setLines] = useState<LogLine[]>([]);
   const [ended, setEnded] = useState<Ended>();
   const [error, setError] = useState<string>();
   const [run, setRun] = useState(0);
@@ -39,12 +36,10 @@ export function WatchView({ castId }: { castId: string }) {
       setError(undefined);
       setStatus(undefined);
       setEnded(undefined);
-      setLines([]);
       try {
-        const updates = client.watch({ castId, logs: LogLevel.INFO }, { signal: abort.signal });
+        const updates = client.watch({ castId }, { signal: abort.signal });
         for await (const { update } of watchUpdates(updates, abort.signal)) {
           if (update.case === "status") setStatus(update.value);
-          else if (update.case === "line") setLines((l) => [...l.slice(-199), update.value]);
           else if (update.case === "ended") {
             setEnded(update.value);
             break;
@@ -99,7 +94,6 @@ export function WatchView({ castId }: { castId: string }) {
         {(over || lost) && <Link href="/" className={buttonClass("ember")}>Cast something else</Link>}
         <Link href="/" className={buttonClass("ghost")}>Home</Link>
       </div>
-      {lines.length > 0 && <Diary lines={lines} open={failed} />}
     </div>
   </Scene>;
 }

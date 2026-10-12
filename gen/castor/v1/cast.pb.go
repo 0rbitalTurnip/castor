@@ -544,10 +544,8 @@ func (*SubtitleSelection_AutoDetect) isSubtitleSelection_Mode() {}
 func (*SubtitleSelection_Language) isSubtitleSelection_Mode() {}
 
 type WatchRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	CastId string                 `protobuf:"bytes,1,opt,name=cast_id,json=castId,proto3" json:"cast_id,omitempty"`
-	// logs is the least severe line sent; unset sends none.
-	Logs          *LogLevel `protobuf:"varint,2,opt,name=logs,proto3,enum=castor.v1.LogLevel,oneof" json:"logs,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CastId        string                 `protobuf:"bytes,1,opt,name=cast_id,json=castId,proto3" json:"cast_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -589,19 +587,11 @@ func (x *WatchRequest) GetCastId() string {
 	return ""
 }
 
-func (x *WatchRequest) GetLogs() LogLevel {
-	if x != nil && x.Logs != nil {
-		return *x.Logs
-	}
-	return LogLevel_LOG_LEVEL_UNSPECIFIED
-}
-
 type WatchResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Update:
 	//
 	//	*WatchResponse_Status
-	//	*WatchResponse_Line
 	//	*WatchResponse_Ended
 	Update        isWatchResponse_Update `protobuf_oneof:"update"`
 	unknownFields protoimpl.UnknownFields
@@ -654,15 +644,6 @@ func (x *WatchResponse) GetStatus() *CastStatus {
 	return nil
 }
 
-func (x *WatchResponse) GetLine() *LogLine {
-	if x != nil {
-		if x, ok := x.Update.(*WatchResponse_Line); ok {
-			return x.Line
-		}
-	}
-	return nil
-}
-
 func (x *WatchResponse) GetEnded() *Ended {
 	if x != nil {
 		if x, ok := x.Update.(*WatchResponse_Ended); ok {
@@ -680,18 +661,11 @@ type WatchResponse_Status struct {
 	Status *CastStatus `protobuf:"bytes,1,opt,name=status,proto3,oneof"`
 }
 
-type WatchResponse_Line struct {
-	Line *LogLine `protobuf:"bytes,2,opt,name=line,proto3,oneof"`
-}
-
 type WatchResponse_Ended struct {
-	// ended is always the last message.
-	Ended *Ended `protobuf:"bytes,3,opt,name=ended,proto3,oneof"`
+	Ended *Ended `protobuf:"bytes,2,opt,name=ended,proto3,oneof"`
 }
 
 func (*WatchResponse_Status) isWatchResponse_Update() {}
-
-func (*WatchResponse_Line) isWatchResponse_Update() {}
 
 func (*WatchResponse_Ended) isWatchResponse_Update() {}
 
@@ -1404,7 +1378,7 @@ var File_castor_v1_cast_proto protoreflect.FileDescriptor
 
 const file_castor_v1_cast_proto_rawDesc = "" +
 	"\n" +
-	"\x14castor/v1/cast.proto\x12\tcastor.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16castor/v1/device.proto\x1a\x13castor/v1/log.proto\x1a\x18castor/v1/revision.proto\x1a\x16castor/v1/stream.proto\x1a\x1bgoogle/protobuf/empty.proto\"\xad\x01\n" +
+	"\x14castor/v1/cast.proto\x12\tcastor.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16castor/v1/device.proto\x1a\x18castor/v1/revision.proto\x1a\x16castor/v1/stream.proto\x1a\x1bgoogle/protobuf/empty.proto\"\xad\x01\n" +
 	"\vCastRequest\x121\n" +
 	"\x06target\x18\x01 \x01(\v2\x11.castor.v1.TargetB\x06\xbaH\x03\xc8\x01\x01R\x06target\x121\n" +
 	"\x06source\x18\x02 \x01(\v2\x11.castor.v1.SourceB\x06\xbaH\x03\xc8\x01\x01R\x06source\x128\n" +
@@ -1439,16 +1413,12 @@ const file_castor_v1_cast_proto_rawDesc = "" +
 	"\vauto_detect\x18\x02 \x01(\v2\x16.google.protobuf.EmptyH\x00R\n" +
 	"autoDetect\x121\n" +
 	"\blanguage\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e2\f^[a-z]{2,3}$H\x00R\blanguageB\r\n" +
-	"\x04mode\x12\x05\xbaH\x02\b\x01\"s\n" +
+	"\x04mode\x12\x05\xbaH\x02\b\x01\"0\n" +
 	"\fWatchRequest\x12 \n" +
-	"\acast_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06castId\x128\n" +
-	"\x04logs\x18\x02 \x01(\x0e2\x13.castor.v1.LogLevelB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x00R\x04logs\x88\x01\x01B\a\n" +
-	"\x05_logs\"\xa5\x01\n" +
+	"\acast_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06castId\"{\n" +
 	"\rWatchResponse\x12/\n" +
 	"\x06status\x18\x01 \x01(\v2\x15.castor.v1.CastStatusH\x00R\x06status\x12(\n" +
-	"\x04line\x18\x02 \x01(\v2\x12.castor.v1.LogLineH\x00R\x04line\x12(\n" +
-	"\x05ended\x18\x03 \x01(\v2\x10.castor.v1.EndedH\x00R\x05endedB\x0f\n" +
+	"\x05ended\x18\x02 \x01(\v2\x10.castor.v1.EndedH\x00R\x05endedB\x0f\n" +
 	"\x06update\x12\x05\xbaH\x02\b\x01\"\x82\x02\n" +
 	"\n" +
 	"CastStatus\x128\n" +
@@ -1548,11 +1518,9 @@ var file_castor_v1_cast_proto_goTypes = []any{
 	(*Stream)(nil),                 // 24: castor.v1.Stream
 	(Delivery)(0),                  // 25: castor.v1.Delivery
 	(*emptypb.Empty)(nil),          // 26: google.protobuf.Empty
-	(LogLevel)(0),                  // 27: castor.v1.LogLevel
-	(*LogLine)(nil),                // 28: castor.v1.LogLine
-	(*Revision)(nil),               // 29: castor.v1.Revision
-	(*Device)(nil),                 // 30: castor.v1.Device
-	(*StreamCandidate)(nil),        // 31: castor.v1.StreamCandidate
+	(*Revision)(nil),               // 27: castor.v1.Revision
+	(*Device)(nil),                 // 28: castor.v1.Device
+	(*StreamCandidate)(nil),        // 29: castor.v1.StreamCandidate
 }
 var file_castor_v1_cast_proto_depIdxs = []int32{
 	22, // 0: castor.v1.CastRequest.target:type_name -> castor.v1.Target
@@ -1568,39 +1536,37 @@ var file_castor_v1_cast_proto_depIdxs = []int32{
 	7,  // 10: castor.v1.Preferences.subtitles:type_name -> castor.v1.SubtitleSelection
 	26, // 11: castor.v1.SubtitleSelection.disabled:type_name -> google.protobuf.Empty
 	26, // 12: castor.v1.SubtitleSelection.auto_detect:type_name -> google.protobuf.Empty
-	27, // 13: castor.v1.WatchRequest.logs:type_name -> castor.v1.LogLevel
-	10, // 14: castor.v1.WatchResponse.status:type_name -> castor.v1.CastStatus
-	28, // 15: castor.v1.WatchResponse.line:type_name -> castor.v1.LogLine
-	13, // 16: castor.v1.WatchResponse.ended:type_name -> castor.v1.Ended
-	26, // 17: castor.v1.CastStatus.connecting:type_name -> google.protobuf.Empty
-	26, // 18: castor.v1.CastStatus.extracting:type_name -> google.protobuf.Empty
-	11, // 19: castor.v1.CastStatus.measuring:type_name -> castor.v1.MeasuringStatus
-	12, // 20: castor.v1.CastStatus.casting:type_name -> castor.v1.CastingStatus
-	29, // 21: castor.v1.CastingStatus.revision:type_name -> castor.v1.Revision
-	26, // 22: castor.v1.Ended.completed:type_name -> google.protobuf.Empty
-	26, // 23: castor.v1.Ended.stopped:type_name -> google.protobuf.Empty
-	14, // 24: castor.v1.Ended.failed:type_name -> castor.v1.Failure
-	0,  // 25: castor.v1.Failure.code:type_name -> castor.v1.FailureCode
-	19, // 26: castor.v1.ListCastsResponse.casts:type_name -> castor.v1.Cast
-	30, // 27: castor.v1.Cast.device:type_name -> castor.v1.Device
-	5,  // 28: castor.v1.Cast.source:type_name -> castor.v1.Source
-	10, // 29: castor.v1.Cast.status:type_name -> castor.v1.CastStatus
-	31, // 30: castor.v1.Source.ResolvedStreams.streams:type_name -> castor.v1.StreamCandidate
-	1,  // 31: castor.v1.CastService.Cast:input_type -> castor.v1.CastRequest
-	3,  // 32: castor.v1.CastService.Resolve:input_type -> castor.v1.ResolveRequest
-	8,  // 33: castor.v1.CastService.Watch:input_type -> castor.v1.WatchRequest
-	15, // 34: castor.v1.CastService.Stop:input_type -> castor.v1.StopRequest
-	17, // 35: castor.v1.CastService.ListCasts:input_type -> castor.v1.ListCastsRequest
-	2,  // 36: castor.v1.CastService.Cast:output_type -> castor.v1.CastResponse
-	4,  // 37: castor.v1.CastService.Resolve:output_type -> castor.v1.ResolveResponse
-	9,  // 38: castor.v1.CastService.Watch:output_type -> castor.v1.WatchResponse
-	16, // 39: castor.v1.CastService.Stop:output_type -> castor.v1.StopResponse
-	18, // 40: castor.v1.CastService.ListCasts:output_type -> castor.v1.ListCastsResponse
-	36, // [36:41] is the sub-list for method output_type
-	31, // [31:36] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	10, // 13: castor.v1.WatchResponse.status:type_name -> castor.v1.CastStatus
+	13, // 14: castor.v1.WatchResponse.ended:type_name -> castor.v1.Ended
+	26, // 15: castor.v1.CastStatus.connecting:type_name -> google.protobuf.Empty
+	26, // 16: castor.v1.CastStatus.extracting:type_name -> google.protobuf.Empty
+	11, // 17: castor.v1.CastStatus.measuring:type_name -> castor.v1.MeasuringStatus
+	12, // 18: castor.v1.CastStatus.casting:type_name -> castor.v1.CastingStatus
+	27, // 19: castor.v1.CastingStatus.revision:type_name -> castor.v1.Revision
+	26, // 20: castor.v1.Ended.completed:type_name -> google.protobuf.Empty
+	26, // 21: castor.v1.Ended.stopped:type_name -> google.protobuf.Empty
+	14, // 22: castor.v1.Ended.failed:type_name -> castor.v1.Failure
+	0,  // 23: castor.v1.Failure.code:type_name -> castor.v1.FailureCode
+	19, // 24: castor.v1.ListCastsResponse.casts:type_name -> castor.v1.Cast
+	28, // 25: castor.v1.Cast.device:type_name -> castor.v1.Device
+	5,  // 26: castor.v1.Cast.source:type_name -> castor.v1.Source
+	10, // 27: castor.v1.Cast.status:type_name -> castor.v1.CastStatus
+	29, // 28: castor.v1.Source.ResolvedStreams.streams:type_name -> castor.v1.StreamCandidate
+	1,  // 29: castor.v1.CastService.Cast:input_type -> castor.v1.CastRequest
+	3,  // 30: castor.v1.CastService.Resolve:input_type -> castor.v1.ResolveRequest
+	8,  // 31: castor.v1.CastService.Watch:input_type -> castor.v1.WatchRequest
+	15, // 32: castor.v1.CastService.Stop:input_type -> castor.v1.StopRequest
+	17, // 33: castor.v1.CastService.ListCasts:input_type -> castor.v1.ListCastsRequest
+	2,  // 34: castor.v1.CastService.Cast:output_type -> castor.v1.CastResponse
+	4,  // 35: castor.v1.CastService.Resolve:output_type -> castor.v1.ResolveResponse
+	9,  // 36: castor.v1.CastService.Watch:output_type -> castor.v1.WatchResponse
+	16, // 37: castor.v1.CastService.Stop:output_type -> castor.v1.StopResponse
+	18, // 38: castor.v1.CastService.ListCasts:output_type -> castor.v1.ListCastsResponse
+	34, // [34:39] is the sub-list for method output_type
+	29, // [29:34] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_castor_v1_cast_proto_init() }
@@ -1609,7 +1575,6 @@ func file_castor_v1_cast_proto_init() {
 		return
 	}
 	file_castor_v1_device_proto_init()
-	file_castor_v1_log_proto_init()
 	file_castor_v1_revision_proto_init()
 	file_castor_v1_stream_proto_init()
 	file_castor_v1_cast_proto_msgTypes[4].OneofWrappers = []any{
@@ -1623,10 +1588,8 @@ func file_castor_v1_cast_proto_init() {
 		(*SubtitleSelection_AutoDetect)(nil),
 		(*SubtitleSelection_Language)(nil),
 	}
-	file_castor_v1_cast_proto_msgTypes[7].OneofWrappers = []any{}
 	file_castor_v1_cast_proto_msgTypes[8].OneofWrappers = []any{
 		(*WatchResponse_Status)(nil),
-		(*WatchResponse_Line)(nil),
 		(*WatchResponse_Ended)(nil),
 	}
 	file_castor_v1_cast_proto_msgTypes[9].OneofWrappers = []any{

@@ -59,16 +59,18 @@ Buf generates Go and TypeScript Connect clients from `proto/`. RPC edges validat
 
 | Contract | RPCs |
 | --- | --- |
-| `castor.v1` (clients → API) | `ListDevices`; `Cast`, `Stop`, `ListCasts`; `Watch` (status, live logs, final `Ended`); `Resolve` (preview, best first). |
+| `castor.v1` (clients → API) | `ListDevices`; `Cast`, `Stop`, `ListCasts`; `Watch` (status, final `Ended`); `Resolve` (preview, best first). |
 | `castor.scraping.v1` (API → scraping) | `ScrapingService.Resolve`: HTTP(S) pages → unranked candidates. Never calls media. |
 | `castor.media.v1` (API → media) | `CastService.Start`, `Stop`, `Watch`; `StreamService.Rank`; `DeviceService.Drive` (capabilities and command stream), `Answer` (command results). |
 
 ## A cast, start to end
 
-1. API returns a cast ID, connects the device (`CONNECTING`), then resolves pages through scraping (`EXTRACTING`). Direct streams bypass scraping.
-2. API starts media with streams and complete preferences, opens `Watch` and `Drive`, and lends the device's capabilities. Media measures/ranks (`MEASURING`), chooses delivery, then plays (`CASTING`). A cast without a lent device is abandoned after a minute.
+1. API mints the cast ID and returns it, connects the device (`CONNECTING`), then resolves pages through scraping (`EXTRACTING`). Direct streams bypass scraping.
+2. API starts media under that same ID with streams and complete preferences (media refuses an ID already in use), opens `Watch` and `Drive`, and lends the device's capabilities. Media measures/ranks (`MEASURING`), chooses delivery, then plays (`CASTING`). A cast without a lent device is abandoned after a minute.
 3. Media sends device commands down `Drive`; API executes them and returns `Answer`. Media decides playback and recovery without needing access to the device's network.
-4. API forwards status and live, unstored logs to watchers, ending with `Ended`. The cast belongs to API, not the UI; the CLI chooses to stop it on Ctrl+C. Media can continue after its lender leaves until it needs device control again.
+4. API forwards status to watchers, ending with `Ended`. The cast belongs to API, not the UI; the CLI chooses to stop it on Ctrl+C. Media can continue after its lender leaves until it needs device control again.
+
+Every call a cast makes carries its ID in the `Castor-Cast-Id` header, and every log line logged under a cast gets `cast_id`, in all three services and in the CLI, so one ID follows a cast through the logs.
 
 Stopping during extraction cancels scraping and releases the device without creating a media cast. Once media starts, API retries stop until accepted. Shutdown drains each service's own work.
 

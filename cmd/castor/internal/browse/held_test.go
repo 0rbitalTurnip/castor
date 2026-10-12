@@ -5,13 +5,22 @@ import (
 	"log/slog"
 	"slices"
 	"testing"
+
+	"github.com/stupside/castor/internal/castid"
 )
 
-type written struct{ lines *[]string }
+type written struct {
+	lines *[]string
+	attrs bool
+}
 
 func (w written) Enabled(context.Context, slog.Level) bool { return true }
 func (w written) Handle(_ context.Context, r slog.Record) error {
-	*w.lines = append(*w.lines, r.Message)
+	line := r.Message
+	if w.attrs {
+		r.Attrs(func(a slog.Attr) bool { line += " " + a.String(); return true })
+	}
+	*w.lines = append(*w.lines, line)
 	return nil
 }
 func (w written) WithAttrs([]slog.Attr) slog.Handler { return w }
@@ -52,5 +61,21 @@ func TestALoggerKeptByBackgroundWorkResumesWritingAfterTheScreen(t *testing.T) {
 	background.Warn("screen closed")
 	if want := []string{"screen open", "screen closed"}; !slices.Equal(out, want) {
 		t.Errorf("wrote %v, want the retained logger to resume writing: %v", out, want)
+	}
+}
+
+func TestAHeldLineIsWrittenUnderTheCastItWasLoggedFor(t *testing.T) {
+	var got []string
+	prev := slog.Default()
+	slog.SetDefault(slog.New(castid.Tagged(written{lines: &got, attrs: true})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	_ = held(func() error {
+		slog.InfoContext(castid.With(t.Context(), "CASTID"), "playing")
+		return nil
+	})
+
+	if want := []string{"playing cast_id=CASTID"}; !slices.Equal(got, want) {
+		t.Errorf("wrote %v after the screen, want the line still tagged: %v", got, want)
 	}
 }

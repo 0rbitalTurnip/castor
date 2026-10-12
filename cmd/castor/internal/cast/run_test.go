@@ -3,10 +3,8 @@ package cast
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
@@ -46,7 +44,7 @@ func TestMalformedTerminalWatchResponseStillStopsTheCast(t *testing.T) {
 	casts := castorv1connect.NewCastServiceClient(client, srv.URL, checked)
 	target := &castorv1.Target{Target: &castorv1.Target_DeviceId{DeviceId: "device"}}
 	source := &castorv1.Source{Source: &castorv1.Source_Stream{Stream: &castorv1.Stream{Url: "https://cdn.example/video"}}}
-	err := Run(t.Context(), casts, target, source, LinesNone)
+	err := Run(t.Context(), casts, target, source)
 	if err == nil {
 		t.Fatal("a malformed terminal watch response succeeded")
 	}
@@ -72,34 +70,11 @@ func TestWatchFailureStopsTheCastBeforeReturningItsError(t *testing.T) {
 	srv := httptest.NewTestServer(t, handler)
 	client := srv.Client()
 	casts := castorv1connect.NewCastServiceClient(client, srv.URL)
-	err := Run(t.Context(), casts, nil, nil, LinesNone)
+	err := Run(t.Context(), casts, nil, nil)
 	if connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Fatalf("Run = %v, want the original watch failure", err)
 	}
 	if service.running {
 		t.Fatal("the failed watch left a remote cast running after the command exited")
-	}
-}
-
-type capture struct{ got *[]string }
-
-func (capture) Enabled(context.Context, slog.Level) bool { return true }
-func (c capture) Handle(_ context.Context, r slog.Record) error {
-	*c.got = append(*c.got, r.Message)
-	return nil
-}
-func (c capture) WithAttrs([]slog.Attr) slog.Handler { return c }
-func (c capture) WithGroup(string) slog.Handler      { return c }
-
-func TestServerLinesGoToTheDefaultLoggerAsItIsWhenTheyArrive(t *testing.T) {
-	handler := FromServer()
-	var got []string
-	prev := slog.Default()
-	slog.SetDefault(slog.New(capture{got: &got}))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-
-	_ = handler.Handle(t.Context(), slog.NewRecord(time.Now(), slog.LevelWarn, "from the server", 0))
-	if len(got) != 1 || got[0] != "from the server" {
-		t.Fatalf("default logger saw %v, want the server's line", got)
 	}
 }

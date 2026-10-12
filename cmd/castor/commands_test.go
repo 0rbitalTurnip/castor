@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -21,8 +20,8 @@ import (
 // urfave/cli resolves flags by lineage, so --dry-run works whether typed before or after the subcommand.
 func TestADryRunOfALinkNeedsNoConfigAndNoServerWhicheverSideTheFlagIsTyped(t *testing.T) {
 	const link = "https://cdn.example/hls/index.m3u8"
-	refuse := Local(func(context.Context, *cli.Command, slog.Handler) (transport.Endpoint, bool, func(), error) {
-		return transport.Endpoint{}, false, nil, errors.New("a dry run started castor's servers")
+	refuse := Local(func(context.Context, *cli.Command) (transport.Endpoint, func(), error) {
+		return transport.Endpoint{}, nil, errors.New("a dry run started castor's servers")
 	})
 	for _, args := range [][]string{
 		{"castor", "-c", "absent.yaml", "cast", "--dry-run", "url", link},
@@ -51,8 +50,8 @@ func TestScanUsesTheConfiguredAPIWithoutRequiringACastDevice(t *testing.T) {
 	if err := os.WriteFile(path, []byte("api:\n  url: "+srv.URL+"\ndevice:\n  name: Living room\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	local := Local(func(context.Context, *cli.Command, slog.Handler) (transport.Endpoint, bool, func(), error) {
-		return transport.Endpoint{}, false, nil, errors.New("scan discarded the configured API and started local servers")
+	local := Local(func(context.Context, *cli.Command) (transport.Endpoint, func(), error) {
+		return transport.Endpoint{}, nil, errors.New("scan discarded the configured API and started local servers")
 	})
 	root := &cli.Command{Name: "castor", Flags: process.Flags, Commands: Commands(local)}
 	if err := root.Run(t.Context(), []string{"castor", "--config", path, "scan"}); err != nil {
@@ -72,9 +71,9 @@ func TestMissingCastArgumentsFailBeforeStartingServers(t *testing.T) {
 	} {
 		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
 			started := false
-			local := Local(func(context.Context, *cli.Command, slog.Handler) (transport.Endpoint, bool, func(), error) {
+			local := Local(func(context.Context, *cli.Command) (transport.Endpoint, func(), error) {
 				started = true
-				return transport.Endpoint{}, false, nil, errors.New("server should not start")
+				return transport.Endpoint{}, nil, errors.New("server should not start")
 			})
 			root := &cli.Command{Name: "castor", Flags: process.Flags, Commands: Commands(local)}
 			if err := root.Run(t.Context(), args); err == nil || !strings.Contains(err.Error(), "Required argument") {

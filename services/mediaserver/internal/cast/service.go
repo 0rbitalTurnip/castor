@@ -3,7 +3,6 @@ package cast
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/url"
@@ -48,12 +47,15 @@ func New(caster func(asked *mediav1.PlaybackSettings) Caster, reach *url.URL) *S
 }
 
 func (s *Service) Start(_ context.Context, req *mediav1.StartRequest) (*mediav1.StartResponse, error) {
-	c := newCast(s.ctx, rand.Text(), s.reach, s.caster(req.GetSettings()), req.GetSource())
-	if !s.casts.Add(c.id, c, c.done) {
+	c := newCast(s.ctx, req.GetCastId(), s.reach, s.caster(req.GetSettings()), req.GetSource())
+	if err := s.casts.Add(c.id, c, c.done); err != nil {
 		c.cancel(errShutdown)
+		if errors.Is(err, registry.ErrTaken) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("cast %q", c.id))
+		}
 		return nil, connect.NewError(connect.CodeUnavailable, errShutdown)
 	}
-	return &mediav1.StartResponse{CastId: c.id}, nil
+	return &mediav1.StartResponse{}, nil
 }
 
 func (s *Service) Stop(_ context.Context, req *mediav1.StopRequest) (*mediav1.StopResponse, error) {

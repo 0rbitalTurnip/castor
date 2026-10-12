@@ -18,9 +18,11 @@ service CastService {
 }
 
 message StartRequest {
+  // cast_id is the API server's id for the cast, the one every tier logs it under; devices fetch what the cast serves by it.
+  string cast_id = 1 [(buf.validate.field).string.pattern = "^[A-Z2-7]{26}$"];
   // source is a direct stream or resolved candidates, never unresolved pages.
-  Source source = 1 [(buf.validate.field).required = true];
-  PlaybackSettings settings = 2 [(buf.validate.field).required = true];
+  Source source = 2 [(buf.validate.field).required = true];
+  PlaybackSettings settings = 3 [(buf.validate.field).required = true];
 }
 
 // PlaybackSettings is the complete policy resolved by API before media is called.
@@ -33,9 +35,7 @@ message PlaybackSettings {
   castor.v1.SubtitleSelection subtitles = 3 [(buf.validate.field).required = true];
 }
 
-message StartResponse {
-  string cast_id = 1 [(buf.validate.field).string.min_len = 1];
-}
+message StartResponse {}
 
 message StopRequest {
   string cast_id = 1 [(buf.validate.field).string.min_len = 1];

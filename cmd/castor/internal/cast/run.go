@@ -9,6 +9,7 @@ import (
 
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
 	"github.com/stupside/castor/gen/castor/v1/castorv1connect"
+	"github.com/stupside/castor/internal/castid"
 )
 
 // stopGrace is how long a stopped cast is given to release its device before the command returns.
@@ -16,15 +17,15 @@ const stopGrace = 10 * time.Second
 
 var errStopped = errors.New("cast stopped")
 
-// Run casts source to to and follows the cast to its end, showing the lines lines asks for; cancelling ctx stops it.
-func Run(ctx context.Context, casts castorv1connect.CastServiceClient, to *castorv1.Target, source *castorv1.Source, lines Lines) error {
+// Run casts source to to and follows the cast to its end, cancelling ctx stops it.
+func Run(ctx context.Context, casts castorv1connect.CastServiceClient, to *castorv1.Target, source *castorv1.Source) error {
 	started, err := casts.Cast(ctx, &castorv1.CastRequest{Target: to, Source: source})
 	if err != nil {
 		return err
 	}
 	id := started.GetCastId()
-	server := FromServer()
-	ended, err := follow(ctx, casts, id, lines.level(), server)
+	ctx = castid.With(ctx, id)
+	ended, err := follow(ctx, casts, id)
 	if ctx.Err() == nil && err == nil {
 		return outcome(ended)
 	}
@@ -34,16 +35,16 @@ func Run(ctx context.Context, casts castorv1connect.CastServiceClient, to *casto
 	if _, err := casts.Stop(stopping, &castorv1.StopRequest{CastId: id}); err != nil {
 		slog.WarnContext(ctx, "stopping the cast", "error", err)
 	}
-	_, _ = follow(stopping, casts, id, nil, server)
+	_, _ = follow(stopping, casts, id)
 	if ctx.Err() == nil {
 		return err
 	}
 	return context.Cause(ctx)
 }
 
-// follow watches cast id to its end, logging what changes and the lines it asked for.
-func follow(ctx context.Context, casts castorv1connect.CastServiceClient, id string, logs *castorv1.LogLevel, server slog.Handler) (*castorv1.Ended, error) {
-	stream, err := casts.Watch(ctx, &castorv1.WatchRequest{CastId: id, Logs: logs})
+// follow watches cast id to its end, logging what changes.
+func follow(ctx context.Context, casts castorv1connect.CastServiceClient, id string) (*castorv1.Ended, error) {
+	stream, err := casts.Watch(ctx, &castorv1.WatchRequest{CastId: id})
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +55,6 @@ func follow(ctx context.Context, casts castorv1connect.CastServiceClient, id str
 		case *castorv1.WatchResponse_Status:
 			changed(ctx, last, u.Status)
 			last = u.Status
-		case *castorv1.WatchResponse_Line:
-			_ = server.Handle(ctx, record(u.Line))
 		case *castorv1.WatchResponse_Ended:
 			return u.Ended, nil
 		}

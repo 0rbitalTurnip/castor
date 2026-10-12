@@ -8,6 +8,8 @@ import (
 	"connectrpc.com/grpchealth"
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
+
+	"github.com/stupside/castor/internal/castid"
 )
 
 // Endpoint is where a server answers, and the token it asks for.
@@ -19,9 +21,9 @@ type Endpoint struct {
 // Client is a client of e, carrying its token.
 func (e Endpoint) Client() *http.Client { return Bearer(e.Token) }
 
-// Checked holds every message a handler or client takes and sends to the rules its contract states.
-func Checked() connect.Option {
-	return connect.WithInterceptors(validate.NewInterceptor(validate.WithValidateResponses()))
+// Options hold every message a handler or client takes and sends to the rules its contract states, and carry the id of the cast a call belongs to.
+func Options() connect.Option {
+	return connect.WithInterceptors(validate.NewInterceptor(validate.WithValidateResponses()), castid.Interceptor())
 }
 
 // Introspect serves health checks and reflection for services on mux.

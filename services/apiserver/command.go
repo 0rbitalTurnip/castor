@@ -10,11 +10,12 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/stupside/castor/internal/settings"
+	"github.com/stupside/castor/internal/telemetry"
 	"github.com/stupside/castor/internal/transport"
 )
 
-// Media runs a media server in this process, for an API server that names none, its own lines going to lines.
-type Media func(ctx context.Context, cmd *cli.Command, lines slog.Handler) (transport.Endpoint, func(), error)
+// Media runs a media server in this process, for an API server that names none.
+type Media func(ctx context.Context, cmd *cli.Command) (transport.Endpoint, func(), error)
 type Scraping func(context.Context, *cli.Command) (transport.Endpoint, func(), error)
 
 // Command is `castor api-server`: the API server alone, casting through the media server server.url names, until interrupted.
@@ -30,6 +31,11 @@ func Command() *cli.Command {
 			if cfg.Server.URL == "" {
 				return errors.New("server.url is required: the API server casts through a media server (`castor media-server`)")
 			}
+			flush, err := telemetry.Setup(ctx, cfg.Telemetry, "castor-api")
+			if err != nil {
+				return err
+			}
+			defer func() { _ = flush(context.WithoutCancel(ctx)) }()
 			scraping := transport.Endpoint{URL: cmp.Or(cfg.Scraping.URL, "http://localhost:8412"), Token: cfg.Scraping.Token}
 			srv, err := New(cfg.backend(transport.Endpoint{URL: cfg.Server.URL, Token: cfg.Server.Token}, scraping), cfg.Cast)
 			if err != nil {
@@ -45,35 +51,35 @@ func Command() *cli.Command {
 	}
 }
 
-// Embedded runs an API server in this process until stop, on loopback, its media server's own lines going to lines when it runs one too, which written reports.
-func Embedded(media Media, scraping Scraping) func(ctx context.Context, cmd *cli.Command, lines slog.Handler) (api transport.Endpoint, written bool, stop func(), err error) {
-	return func(ctx context.Context, cmd *cli.Command, lines slog.Handler) (transport.Endpoint, bool, func(), error) {
+// Embedded runs an API server in this process until stop, on loopback.
+func Embedded(media Media, scraping Scraping) func(ctx context.Context, cmd *cli.Command) (api transport.Endpoint, stop func(), err error) {
+	return func(ctx context.Context, cmd *cli.Command) (transport.Endpoint, func(), error) {
 		cfg, err := settings.Load(cmd, defaults())
 		if err != nil {
-			return transport.Endpoint{}, false, nil, err
+			return transport.Endpoint{}, nil, err
 		}
-		srv, stopMedia, err := cfg.server(ctx, cmd, media, scraping, lines)
+		srv, stopMedia, err := cfg.server(ctx, cmd, media, scraping)
 		if err != nil {
-			return transport.Endpoint{}, false, nil, err
+			return transport.Endpoint{}, nil, err
 		}
 		api, stopAPI, err := transport.Loopback(ctx, srv, cfg.API.Token, srv.Shutdown)
 		if err != nil {
 			stopMedia()
-			return transport.Endpoint{}, false, nil, err
+			return transport.Endpoint{}, nil, err
 		}
 		stop := func() {
 			stopAPI()
 			stopMedia()
 		}
-		return api, cfg.Server.URL == "", stop, nil
+		return api, stop, nil
 	}
 }
 
 // server is the API server cfg describes, casting through the media server it names, or one media runs here; stop ends the one run here.
-func (c *Config) server(ctx context.Context, cmd *cli.Command, media Media, resolver Scraping, lines slog.Handler) (srv *Server, stop func(), err error) {
+func (c *Config) server(ctx context.Context, cmd *cli.Command, media Media, resolver Scraping) (srv *Server, stop func(), err error) {
 	at, stop := transport.Endpoint{URL: c.Server.URL, Token: c.Server.Token}, func() {}
 	if at.URL == "" {
-		if at, stop, err = media(ctx, cmd, lines); err != nil {
+		if at, stop, err = media(ctx, cmd); err != nil {
 			return nil, nil, err
 		}
 	}

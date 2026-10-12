@@ -15,6 +15,7 @@ import (
 	"charm.land/log/v2"
 	"github.com/urfave/cli/v3"
 
+	"github.com/stupside/castor/internal/castid"
 	"github.com/stupside/castor/internal/settings"
 )
 
@@ -25,9 +26,6 @@ const debugFlag = "debug"
 
 // Flags are the root flags every castor binary reads its configuration and verbosity through.
 var Flags = []cli.Flag{settings.Flag, &cli.BoolFlag{Name: debugFlag, Usage: "Enable debug logging"}}
-
-// Debug reports whether cmd runs under --debug.
-func Debug(cmd *cli.Command) bool { return cmd.Bool(debugFlag) }
 
 // Run runs root until it returns or the process is interrupted, exiting non-zero on its error.
 func Run(root *cli.Command) {
@@ -41,7 +39,7 @@ func Run(root *cli.Command) {
 	root.Version = version
 	root.Flags = append(root.Flags, Flags...)
 	root.Before = func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-		if Debug(cmd) {
+		if cmd.Bool(debugFlag) {
 			slog.SetDefault(logger(log.DebugLevel))
 		}
 		return ctx, nil
@@ -110,8 +108,8 @@ func logger(level log.Level) *slog.Logger {
 	})
 	f := file()
 	if f == nil {
-		return slog.New(screen)
+		return slog.New(castid.Tagged(screen))
 	}
 	text := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.Level(level)})
-	return slog.New(slog.NewMultiHandler(screen, text))
+	return slog.New(castid.Tagged(slog.NewMultiHandler(screen, text)))
 }

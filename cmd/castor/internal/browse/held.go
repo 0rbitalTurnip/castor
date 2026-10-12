@@ -16,8 +16,8 @@ func held(run func() error) error {
 		slog.SetDefault(prev)
 		h.lines.mu.Lock()
 		defer h.lines.mu.Unlock()
-		for _, r := range h.lines.kept {
-			_ = prev.Handler().Handle(context.Background(), r)
+		for _, k := range h.lines.kept {
+			_ = prev.Handler().Handle(context.WithoutCancel(k.ctx), k.record)
 		}
 		h.lines.kept = nil
 		h.lines.released = true
@@ -32,9 +32,15 @@ type holding struct {
 	lines *lines
 }
 
+// heldLine is a record with the context it was logged under, so the cast it belongs to is not lost when it is written.
+type heldLine struct {
+	ctx    context.Context
+	record slog.Record
+}
+
 type lines struct {
 	mu       sync.Mutex
-	kept     []slog.Record
+	kept     []heldLine
 	released bool
 }
 
@@ -50,7 +56,7 @@ func (h *holding) Handle(ctx context.Context, r slog.Record) error {
 		h.lines.mu.Unlock()
 		return h.next.Handle(ctx, r)
 	}
-	h.lines.kept = append(h.lines.kept, r)
+	h.lines.kept = append(h.lines.kept, heldLine{ctx: ctx, record: r})
 	h.lines.mu.Unlock()
 	return nil
 }

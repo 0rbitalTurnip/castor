@@ -10,8 +10,8 @@ import (
 
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
+	"github.com/stupside/castor/internal/castid"
 	"github.com/stupside/castor/internal/latest"
-	"github.com/stupside/castor/services/mediaserver/internal/castlog"
 	"github.com/stupside/castor/services/mediaserver/internal/lend"
 	"github.com/stupside/castor/services/mediaserver/internal/mediaroute"
 )
@@ -24,7 +24,7 @@ var (
 // undriven is how long a cast waits for a device before it gives up.
 const undriven = time.Minute
 
-// cast is one cast: where it stands, its line to the device, what it serves, and who reads its lines.
+// cast is one cast: where it stands, its line to the device, and what it serves.
 type cast struct {
 	ctx    context.Context
 	id     string
@@ -39,24 +39,21 @@ type cast struct {
 
 	line       *lend.Line
 	deliveries *mediaroute.Deliveries
-	logs       *castlog.Feed
 }
 
 // newCast awaits its device for undriven, and no longer than parent lasts; lending it one starts the cast.
 func newCast(parent context.Context, id string, reach *url.URL, caster Caster, src *mediav1.Source) *cast {
-	ctx, cancel := context.WithCancelCause(parent)
+	ctx, cancel := context.WithCancelCause(castid.With(parent, id))
 	c := &cast{
 		id:         id,
+		ctx:        ctx,
 		cancel:     cancel,
 		caster:     caster,
 		source:     originOf(src),
 		done:       make(chan struct{}),
 		line:       lend.NewLine(),
 		deliveries: mediaroute.NewDeliveries(reach, id),
-		logs:       castlog.NewFeed(),
 	}
-	// Everything the cast logs carries its feed, so its lines reach the watchers who asked for them.
-	c.ctx = castlog.Into(ctx, c.logs)
 	c.machine = c.lifecycle()
 	c.now = latest.New(view{status: &castorv1.CastStatus{State: &castorv1.CastStatus_Measuring{Measuring: &castorv1.MeasuringStatus{}}}})
 	abandon := time.AfterFunc(undriven, func() { c.end(eventAbandon, errUndriven) })

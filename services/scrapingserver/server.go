@@ -33,7 +33,7 @@ func New(resolver Resolver) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{resolver: resolver, ctx: ctx, cancel: cancel}
 	mux := http.NewServeMux()
-	mux.Handle(scrapingv1connect.NewScrapingServiceHandler(s, transport.Checked()))
+	mux.Handle(scrapingv1connect.NewScrapingServiceHandler(s, transport.Options()))
 	transport.Introspect(mux, scrapingv1connect.ScrapingServiceName)
 	s.Handler = mux
 	return s

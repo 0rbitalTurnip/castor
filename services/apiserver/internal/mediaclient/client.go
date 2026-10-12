@@ -21,7 +21,7 @@ type Client struct {
 
 // New reaches the media server at baseURL through client, which carries whatever credentials it asks.
 func New(client *http.Client, baseURL string) *Client {
-	valid := transport.Checked()
+	valid := transport.Options()
 	return &Client{
 		casts:   mediav1connect.NewCastServiceClient(client, baseURL, valid),
 		devices: mediav1connect.NewDeviceServiceClient(client, baseURL, valid),
@@ -29,13 +29,10 @@ func New(client *http.Client, baseURL string) *Client {
 	}
 }
 
-// Start begins a cast of source as asked, and returns its id on the media server.
-func (c *Client) Start(ctx context.Context, source *mediav1.Source, asked *mediav1.PlaybackSettings) (string, error) {
-	started, err := c.casts.Start(ctx, &mediav1.StartRequest{Source: source, Settings: asked})
-	if err != nil {
-		return "", err
-	}
-	return started.GetCastId(), nil
+// Start begins cast id of source as asked.
+func (c *Client) Start(ctx context.Context, id string, source *mediav1.Source, asked *mediav1.PlaybackSettings) error {
+	_, err := c.casts.Start(ctx, &mediav1.StartRequest{CastId: id, Source: source, Settings: asked})
+	return err
 }
 
 func (c *Client) Stop(ctx context.Context, id string) error {
@@ -52,9 +49,9 @@ func (c *Client) Rank(ctx context.Context, source *mediav1.Source, asked *mediav
 	return ranked.GetRanked(), nil
 }
 
-// Watch follows cast id to its end, handing status every status and line every line from logs on (nil asks none), and returns how it ended.
-func (c *Client) Watch(ctx context.Context, id string, logs *castorv1.LogLevel, status func(*castorv1.CastStatus), line func(*castorv1.LogLine)) (*castorv1.Ended, error) {
-	stream, err := c.casts.Watch(ctx, &castorv1.WatchRequest{CastId: id, Logs: logs})
+// Watch follows cast id to its end, handing status every status, and returns how it ended.
+func (c *Client) Watch(ctx context.Context, id string, status func(*castorv1.CastStatus)) (*castorv1.Ended, error) {
+	stream, err := c.casts.Watch(ctx, &castorv1.WatchRequest{CastId: id})
 	if err != nil {
 		return nil, err
 	}
@@ -64,10 +61,6 @@ func (c *Client) Watch(ctx context.Context, id string, logs *castorv1.LogLevel, 
 		case *castorv1.WatchResponse_Status:
 			if status != nil {
 				status(u.Status)
-			}
-		case *castorv1.WatchResponse_Line:
-			if line != nil {
-				line(u.Line)
 			}
 		case *castorv1.WatchResponse_Ended:
 			return u.Ended, nil

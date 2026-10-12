@@ -14,7 +14,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,12 +24,12 @@ import (
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 	"github.com/stupside/castor/gen/castor/media/v1/mediav1connect"
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
+	"github.com/stupside/castor/internal/castid"
 	"github.com/stupside/castor/services/mediaserver"
 	"github.com/stupside/castor/services/mediaserver/internal/cast"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/deliver"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/execute"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/recovery"
-	"github.com/stupside/castor/services/mediaserver/internal/castlog"
 	"github.com/stupside/castor/services/mediaserver/internal/media"
 	"github.com/stupside/castor/services/mediaserver/internal/source"
 )
@@ -200,11 +199,11 @@ func candidatesOf(urls ...string) *mediav1.Source {
 
 func start(t *testing.T, c server, source *mediav1.Source) string {
 	t.Helper()
-	started, err := c.casts.Start(t.Context(), &mediav1.StartRequest{Source: source, Settings: asked})
-	if err != nil {
+	id := castid.New()
+	if _, err := c.casts.Start(t.Context(), &mediav1.StartRequest{CastId: id, Source: source, Settings: asked}); err != nil {
 		t.Fatal(err)
 	}
-	return started.GetCastId()
+	return id
 }
 
 // lend lends device to cast id as the API server would, running each command it is sent, until the drive ends.
@@ -250,7 +249,6 @@ func lend(ctx context.Context, c server, id string, device *lentDevice) error {
 // watched is what a watcher was sent of one cast, once it ended.
 type watched struct {
 	shown []*castorv1.CastStatus
-	lines []*castorv1.LogLine
 	ended *castorv1.Ended
 	err   error
 }
@@ -270,10 +268,10 @@ func (w watched) outcome() error {
 	return errors.New("the cast ended without a result")
 }
 
-// watching watches cast id, asking for its lines from logs on, and returns once the first status is shown, with what it saw to come.
-func watching(t *testing.T, c server, id string, logs *castorv1.LogLevel) <-chan watched {
+// watching watches cast id and returns once the first status is shown, with what it saw to come.
+func watching(t *testing.T, c server, id string) <-chan watched {
 	t.Helper()
-	stream, err := c.casts.Watch(t.Context(), &castorv1.WatchRequest{CastId: id, Logs: logs})
+	stream, err := c.casts.Watch(t.Context(), &castorv1.WatchRequest{CastId: id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,8 +286,6 @@ func watching(t *testing.T, c server, id string, logs *castorv1.LogLevel) <-chan
 			switch u := stream.Msg().GetUpdate().(type) {
 			case *castorv1.WatchResponse_Status:
 				w.shown = append(w.shown, u.Status)
-			case *castorv1.WatchResponse_Line:
-				w.lines = append(w.lines, u.Line)
 			case *castorv1.WatchResponse_Ended:
 				w.ended = u.Ended
 				out <- w
@@ -306,7 +302,7 @@ func watching(t *testing.T, c server, id string, logs *castorv1.LogLevel) <-chan
 func castOn(t *testing.T, c server, source *mediav1.Source, device *lentDevice) watched {
 	t.Helper()
 	id := start(t, c, source)
-	w := watching(t, c, id, nil)
+	w := watching(t, c, id)
 	lent := make(chan error, 1)
 	go func() { lent <- lend(t.Context(), c, id, device) }()
 	out := <-w
@@ -506,91 +502,6 @@ func stateOrder(t *testing.T, status *castorv1.CastStatus) int {
 	}
 }
 
-func logging(ctx context.Context, _ execute.Device, _ deliver.Listeners, _ []*source.Stream, _ recovery.Turns) error {
-	slog.InfoContext(ctx, "engine at work", "try", 1)
-	return nil
-}
-
-// embedded routes this process's logs as an embedded engine does, for the test's lifetime, and keeps what the process wrote.
-func embedded(t *testing.T) *recorder {
-	t.Helper()
-	process := &recorder{}
-	prev := slog.Default()
-	slog.SetDefault(slog.New(castlog.Router(process, slog.DiscardHandler)))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-	return process
-}
-
-type recorder struct {
-	mu    sync.Mutex
-	lines []string
-}
-
-func (*recorder) Enabled(context.Context, slog.Level) bool { return true }
-
-func (r *recorder) Handle(_ context.Context, rec slog.Record) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.lines = append(r.lines, rec.Message)
-	return nil
-}
-
-func (r *recorder) WithAttrs([]slog.Attr) slog.Handler { return r }
-func (r *recorder) WithGroup(string) slog.Handler      { return r }
-
-func (r *recorder) wrote() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Clone(r.lines)
-}
-
-func TestTheServersLinesForACastReachOnlyTheWatchersThatAskedForThem(t *testing.T) {
-	process := embedded(t)
-	c := serve(t, machinery(logging).backend())
-
-	for name, tc := range map[string]struct {
-		logs *castorv1.LogLevel
-		gets bool
-	}{
-		"asked for info": {castorv1.LogLevel_LOG_LEVEL_INFO.Enum(), true},
-		"asked for warn": {castorv1.LogLevel_LOG_LEVEL_WARN.Enum(), false},
-		"asked for none": {nil, false},
-	} {
-		id := start(t, c, candidatesOf("https://cdn.example/a.m3u8"))
-		w := watching(t, c, id, tc.logs)
-		go func() { _ = lend(t.Context(), c, id, newLentDevice()) }()
-		got := <-w
-		if err := got.outcome(); err != nil {
-			t.Fatal(err)
-		}
-		i := slices.IndexFunc(got.lines, func(l *castorv1.LogLine) bool { return l.GetMessage() == "engine at work" })
-		if (i >= 0) != tc.gets {
-			t.Errorf("%s: got the engine's line %v, want %v", name, i >= 0, tc.gets)
-		}
-		if i >= 0 && (len(got.lines[i].GetAttrs()) != 1 || got.lines[i].GetAttrs()[0].GetKey() != "try") {
-			t.Errorf("%s: the line arrived with %v, want its try", name, got.lines[i].GetAttrs())
-		}
-	}
-	if slices.Contains(process.wrote(), "engine at work") {
-		t.Error("the embedded engine wrote its line to this process's output")
-	}
-}
-
-func TestTheServersOwnLinesStayOffTheProcessThatEmbedsIt(t *testing.T) {
-	process := embedded(t)
-	c := serve(t, machinery(nil).backend())
-
-	// A ranking logs on the server with no cast to carry it.
-	if _, err := c.streams.Rank(t.Context(), &mediav1.RankRequest{Source: candidatesOf("https://cdn.example/a.m3u8"), Settings: asked}); err != nil {
-		t.Fatal(err)
-	}
-	slog.InfoContext(t.Context(), "process line")
-
-	if got := process.wrote(); !slices.Equal(got, []string{"process line"}) {
-		t.Errorf("the process wrote %q, want its own line alone", got)
-	}
-}
-
 func TestWhatTheServerServesTheDeviceFetchesFromTheServerItself(t *testing.T) {
 	device := newLentDevice()
 	delivered, delivery := make(chan string, 1), make(chan string, 1)
@@ -651,7 +562,7 @@ func TestDevicesReachOnlyThePortsACastServesNeverTheAPI(t *testing.T) {
 	}).backend())
 
 	id := start(t, c, streamOf("https://cdn.example/direct"))
-	w := watching(t, c, id, nil)
+	w := watching(t, c, id)
 	go func() { _ = lend(t.Context(), c, id, newLentDevice()) }()
 	for what, path := range map[string]string{
 		"a port the cast never served": "/media/" + id + "/22/etc/passwd",
@@ -705,7 +616,7 @@ func TestACastHasOneDeviceAndPlaysOnWhenItsLenderLeaves(t *testing.T) {
 	}).backend())
 
 	id := start(t, c, streamOf("https://cdn.example/direct"))
-	w := watching(t, c, id, nil)
+	w := watching(t, c, id)
 	lending, leave := context.WithCancel(t.Context())
 	go func() { _ = lend(lending, c, id, newLentDevice()) }()
 	<-playing
@@ -742,7 +653,7 @@ func TestACastThatNeedsItsDeviceAgainOnceItsLenderLeftEndsThere(t *testing.T) {
 	}).backend())
 
 	id := start(t, c, streamOf("https://cdn.example/direct"))
-	w := watching(t, c, id, nil)
+	w := watching(t, c, id)
 	lending, leave := context.WithCancel(t.Context())
 	go func() { _ = lend(lending, c, id, newLentDevice()) }()
 	<-lent
@@ -758,8 +669,8 @@ func TestWatchingNeverDrivesAndTheCastStartsWithItsLender(t *testing.T) {
 	c := serve(t, machinery(handoff).backend())
 
 	id := start(t, c, streamOf("https://cdn.example/direct"))
-	w := watching(t, c, id, nil)
-	onlooker := watching(t, c, id, nil)
+	w := watching(t, c, id)
+	onlooker := watching(t, c, id)
 	select {
 	case <-device.handed:
 		t.Fatal("watching the cast played on a device")
@@ -805,7 +716,7 @@ func TestCandidateMetadataReachesRankingWhole(t *testing.T) {
 func TestMalformedSourcesAreRejectedBeforeRankingOrPlayback(t *testing.T) {
 	e := machinery(handoff)
 	c := serve(t, e.backend())
-	if _, err := c.casts.Start(t.Context(), &mediav1.StartRequest{Settings: asked}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := c.casts.Start(t.Context(), &mediav1.StartRequest{CastId: castid.New(), Settings: asked}); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("Start answered %v, want invalid argument", err)
 	}
 	if _, err := c.streams.Rank(t.Context(), &mediav1.RankRequest{Settings: asked}); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -831,7 +742,7 @@ func TestAServerShuttingDownFailsItsCastsSayingSoAndTakesNoMore(t *testing.T) {
 	}).backend())
 
 	id := start(t, c, streamOf("https://cdn.example/direct"))
-	w := watching(t, c, id, nil)
+	w := watching(t, c, id)
 	go func() { _ = lend(t.Context(), c, id, newLentDevice()) }()
 	<-playing
 	c.running.Shutdown(t.Context())
@@ -841,7 +752,22 @@ func TestAServerShuttingDownFailsItsCastsSayingSoAndTakesNoMore(t *testing.T) {
 	if got := <-w; got.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_SERVER_SHUTDOWN || got.ended.GetFailed().GetMessage() != "server shutting down" {
 		t.Errorf("the cast ended %v, want it failed as the server shut down", got.ended)
 	}
-	if _, err := c.casts.Start(t.Context(), &mediav1.StartRequest{Source: streamOf("https://cdn.example/direct"), Settings: asked}); connect.CodeOf(err) != connect.CodeUnavailable {
+	if _, err := c.casts.Start(t.Context(), &mediav1.StartRequest{CastId: castid.New(), Source: streamOf("https://cdn.example/direct"), Settings: asked}); connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Errorf("a cast started on a server shutting down was met with %v, want unavailable", err)
+	}
+}
+
+func TestACastIDIsHeldToTheContractAndToOneCastAtATime(t *testing.T) {
+	c := serve(t, machinery(handoff).backend())
+
+	for _, id := range []string{"", "short", "lowercase-and-far-too-long-for-an-id"} {
+		_, err := c.casts.Start(t.Context(), &mediav1.StartRequest{CastId: id, Source: streamOf("https://cdn.example/direct"), Settings: asked})
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "cast_id") {
+			t.Errorf("Start with id %q answered %v, want invalid argument naming cast_id", id, err)
+		}
+	}
+	id := start(t, c, streamOf("https://cdn.example/direct"))
+	if _, err := c.casts.Start(t.Context(), &mediav1.StartRequest{CastId: id, Source: streamOf("https://cdn.example/other"), Settings: asked}); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Errorf("a second Start under id %s answered %v, want already exists", id, err)
 	}
 }

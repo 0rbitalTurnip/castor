@@ -10,8 +10,8 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/stupside/castor/internal/settings"
+	"github.com/stupside/castor/internal/telemetry"
 	"github.com/stupside/castor/internal/transport"
-	"github.com/stupside/castor/services/mediaserver/internal/castlog"
 	"github.com/stupside/castor/services/mediaserver/internal/mediaroute"
 )
 
@@ -25,6 +25,11 @@ func Command() *cli.Command {
 			if err != nil {
 				return err
 			}
+			flush, err := telemetry.Setup(ctx, cfg.Telemetry, "castor-media")
+			if err != nil {
+				return err
+			}
+			defer func() { _ = flush(context.WithoutCancel(ctx)) }()
 			l, err := transport.Listen(ctx, cfg.Server.Listen, cfg.Server.Token, "server.token")
 			if err != nil {
 				return err
@@ -34,9 +39,6 @@ func Command() *cli.Command {
 			if err != nil {
 				return fmt.Errorf("resolving where devices reach this server (set server.advertise): %w", err)
 			}
-			// A detached media server keeps every line on its own output too; watchers get their casts' lines live.
-			h := slog.Default().Handler()
-			slog.SetDefault(slog.New(castlog.Router(h, h)))
 			slog.InfoContext(ctx, "serving", "address", l.Addr().String(), "devices_reach", reach.String())
 			srv := New(cfg.backend(), reach)
 			return transport.Serve(ctx, l, onePort(srv, cfg.Server.Token), srv.Shutdown)
@@ -52,13 +54,12 @@ func onePort(srv *Server, token string) http.Handler {
 	return mux
 }
 
-// Embedded runs a media server in this process until stop, its own lines going to lines: its API on loopback, its media route where devices on this network reach it.
-func Embedded(ctx context.Context, cmd *cli.Command, lines slog.Handler) (transport.Endpoint, func(), error) {
+// Embedded runs a media server in this process until stop: its API on loopback, its media route where devices on this network reach it.
+func Embedded(ctx context.Context, cmd *cli.Command) (transport.Endpoint, func(), error) {
 	cfg, err := settings.Load(cmd, defaults())
 	if err != nil {
 		return transport.Endpoint{}, nil, err
 	}
-	slog.SetDefault(slog.New(castlog.Router(slog.Default().Handler(), lines)))
 	lan, err := cfg.deviceListener(ctx)
 	if err != nil {
 		return transport.Endpoint{}, nil, fmt.Errorf("opening where devices reach this machine: %w", err)

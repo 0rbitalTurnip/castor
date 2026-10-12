@@ -51,7 +51,7 @@ type CastServiceClient interface {
 	Cast(context.Context, *v1.CastRequest) (*v1.CastResponse, error)
 	// Resolve is what Cast would play from a source, best first, without casting.
 	Resolve(context.Context, *v1.ResolveRequest) (*v1.ResolveResponse, error)
-	// Watch sends a cast's status now and on every change (changes close together may arrive as one), its log lines when asked, and Ended last; a stream cut before Ended is an error.
+	// Watch sends a cast's status now and on every change (changes close together may arrive as one), and Ended last; a stream cut before Ended is an error.
 	// A cast stays watchable for 5 minutes after its end.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	Watch(context.Context, *v1.WatchRequest) (*connect.ServerStreamForClient[v1.WatchResponse], error)
@@ -161,7 +161,7 @@ type CastServiceHandler interface {
 	Cast(context.Context, *v1.CastRequest) (*v1.CastResponse, error)
 	// Resolve is what Cast would play from a source, best first, without casting.
 	Resolve(context.Context, *v1.ResolveRequest) (*v1.ResolveResponse, error)
-	// Watch sends a cast's status now and on every change (changes close together may arrive as one), its log lines when asked, and Ended last; a stream cut before Ended is an error.
+	// Watch sends a cast's status now and on every change (changes close together may arrive as one), and Ended last; a stream cut before Ended is an error.
 	// A cast stays watchable for 5 minutes after its end.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	Watch(context.Context, *v1.WatchRequest, *connect.ServerStream[v1.WatchResponse]) error

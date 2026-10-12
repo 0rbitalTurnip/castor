@@ -3,7 +3,6 @@ package apiserver_test
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/http"
@@ -148,12 +147,10 @@ func (m *media) Start(_ context.Context, req *mediav1.StartRequest) (*mediav1.St
 	m.sources <- proto.CloneOf(req.GetSource())
 	c := &mediaCast{source: req.GetSource(), answers: make(chan *mediav1.AnswerRequest, 1), more: make(chan struct{}), done: make(chan struct{})}
 	c.status(&castorv1.CastStatus{State: &castorv1.CastStatus_Measuring{Measuring: &castorv1.MeasuringStatus{}}})
-	c.line("engine at work")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := rand.Text()
-	m.casts[id] = c
-	return &mediav1.StartResponse{CastId: id}, nil
+	m.casts[req.GetCastId()] = c
+	return &mediav1.StartResponse{}, nil
 }
 
 func (m *media) find(id string) (*mediaCast, error) {
@@ -166,17 +163,13 @@ func (m *media) find(id string) (*mediaCast, error) {
 	return c, nil
 }
 
-// Stop ends the cast stopped, logging as it lets go more lines than a watch takes in at once.
+// Stop ends the cast stopped.
 func (m *media) Stop(_ context.Context, req *mediav1.StopRequest) (*mediav1.StopResponse, error) {
 	c, err := m.find(req.GetCastId())
 	if err != nil {
 		return nil, err
 	}
 	m.stop()
-	for i := range 200 {
-		c.line(fmt.Sprintf("engine letting go %d", i))
-	}
-	c.line("engine let go")
 	c.end(&castorv1.Ended{Result: &castorv1.Ended_Stopped{Stopped: &emptypb.Empty{}}})
 	return &mediav1.StopResponse{}, nil
 }
@@ -193,9 +186,6 @@ func (m *media) Watch(ctx context.Context, req *castorv1.WatchRequest, out *conn
 		updates, more := c.since(next)
 		next += len(updates)
 		for _, u := range updates {
-			if u.GetLine() != nil && req.Logs == nil {
-				continue
-			}
 			if err := out.Send(u); err != nil {
 				return err
 			}
@@ -295,10 +285,6 @@ func (c *mediaCast) since(next int) ([]*castorv1.WatchResponse, <-chan struct{})
 
 func (c *mediaCast) status(s *castorv1.CastStatus) {
 	c.publish(&castorv1.WatchResponse{Update: &castorv1.WatchResponse_Status{Status: s}})
-}
-
-func (c *mediaCast) line(message string) {
-	c.publish(&castorv1.WatchResponse{Update: &castorv1.WatchResponse_Line{Line: &castorv1.LogLine{Level: castorv1.LogLevel_LOG_LEVEL_INFO, Message: message}}})
 }
 
 func (c *mediaCast) end(e *castorv1.Ended) {
@@ -411,14 +397,13 @@ func cast(t *testing.T, c api, source *castorv1.Source) string {
 // watched is what a watcher was sent of one cast.
 type watched struct {
 	shown []*castorv1.CastStatus
-	lines []*castorv1.LogLine
 	ended *castorv1.Ended
 }
 
-// watch follows cast id to its end, from logs on when set.
-func watch(t *testing.T, c api, id string, logs *castorv1.LogLevel) watched {
+// watch follows cast id to its end.
+func watch(t *testing.T, c api, id string) watched {
 	t.Helper()
-	stream, err := c.casts.Watch(t.Context(), &castorv1.WatchRequest{CastId: id, Logs: logs})
+	stream, err := c.casts.Watch(t.Context(), &castorv1.WatchRequest{CastId: id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,8 +413,6 @@ func watch(t *testing.T, c api, id string, logs *castorv1.LogLevel) watched {
 		switch u := stream.Msg().GetUpdate().(type) {
 		case *castorv1.WatchResponse_Status:
 			w.shown = append(w.shown, u.Status)
-		case *castorv1.WatchResponse_Line:
-			w.lines = append(w.lines, u.Line)
 		case *castorv1.WatchResponse_Ended:
 			w.ended = u.Ended
 			return w
@@ -478,7 +461,7 @@ func TestADeviceListedIsCastOnAndTheCastEndsShowingItsLastAttempt(t *testing.T) 
 	if len(devices) != 1 || devices[0].GetId() != "dlna:uuid-1" || devices[0].GetName() != "Bedroom" || devices[0].GetType() != castorv1.DeviceType_DEVICE_TYPE_DLNA {
 		t.Fatalf("listed %v, want the bedroom device under its family and identity", devices)
 	}
-	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil)
+	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")))
 	if w.ended.GetCompleted() == nil {
 		t.Errorf("the cast ended %v, want ended", w.ended)
 	}
@@ -521,7 +504,7 @@ func TestPagesAreSearchedThenTheirBestStreamIsCast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := watch(t, c, started.GetCastId(), nil)
+	w := watch(t, c, started.GetCastId())
 	if w.ended.GetCompleted() == nil {
 		t.Errorf("the cast ended %v, want ended", w.ended)
 	}
@@ -553,7 +536,7 @@ func TestDirectAndResolvedSourcesBypassExtraction(t *testing.T) {
 		if _, err := c.casts.Resolve(t.Context(), &castorv1.ResolveRequest{Source: source}); err != nil {
 			t.Fatal(err)
 		}
-		if w := watch(t, c, cast(t, c, source), nil); w.ended.GetCompleted() == nil {
+		if w := watch(t, c, cast(t, c, source)); w.ended.GetCompleted() == nil {
 			t.Fatal(w.ended)
 		}
 	}
@@ -572,7 +555,7 @@ func TestFailedExtractionNeverReachesMedia(t *testing.T) {
 	if _, err := c.casts.Resolve(t.Context(), &castorv1.ResolveRequest{Source: pages}); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("resolve: %v, want not found", err)
 	}
-	w := watch(t, c, cast(t, c, pages), nil)
+	w := watch(t, c, cast(t, c, pages))
 	if w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_EXTRACTION_FAILED || !strings.Contains(w.ended.GetFailed().GetMessage(), "no playable stream") {
 		t.Fatalf("extraction failed without an explanation: %v", w.ended)
 	}
@@ -610,7 +593,7 @@ func TestListingResolvedCandidatesRedactsCredentialsWithoutChangingPlayback(t *t
 	if _, err := c.casts.Stop(t.Context(), &castorv1.StopRequest{CastId: id}); err != nil {
 		t.Fatal(err)
 	}
-	watch(t, c, id, nil)
+	watch(t, c, id)
 }
 
 func TestRequestPreferencesOverrideTheDefaultsFieldByField(t *testing.T) {
@@ -638,7 +621,7 @@ func TestRequestPreferencesOverrideTheDefaultsFieldByField(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if w := watch(t, c, started.GetCastId(), nil); w.ended.GetCompleted() == nil {
+		if w := watch(t, c, started.GetCastId()); w.ended.GetCompleted() == nil {
 			t.Fatal(w.ended)
 		}
 		if got := <-m.asked; !proto.Equal(got, tc.want) {
@@ -673,7 +656,7 @@ func TestSubtitleModesOverrideOrInheritTheConfiguredLanguage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if w := watch(t, c, started.GetCastId(), nil); w.ended.GetCompleted() == nil {
+			if w := watch(t, c, started.GetCastId()); w.ended.GetCompleted() == nil {
 				t.Fatal(w.ended)
 			}
 			if got := <-m.asked; !proto.Equal(got, want) {
@@ -688,7 +671,7 @@ func TestBrokenMediaWatchStopsTheCast(t *testing.T) {
 	m.watchUpdate = &castorv1.WatchResponse{Update: &castorv1.WatchResponse_Status{Status: &castorv1.CastStatus{}}}
 	f := newFamily()
 	c := serve(t, setup{media: m, family: f, uncheckedMedia: true})
-	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil)
+	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")))
 	if w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_INTERNAL || w.ended.GetFailed().GetMessage() == "" {
 		t.Fatalf("broken media watch ended the public cast as %v, want an internal failure", w.ended)
 	}
@@ -711,7 +694,7 @@ func TestMalformedDeviceCommandsFailTheCastBeforeTouchingTheDevice(t *testing.T)
 	m, f := newMedia(true), newFamily()
 	m.driveCommand = &mediav1.DeviceCommand{Id: "play", Command: &mediav1.DeviceCommand_Play_{Play: &mediav1.DeviceCommand_Play{Url: "/stream", Container: mediav1.Container_CONTAINER_HLS}}}
 	c := serve(t, setup{media: m, family: f, uncheckedMedia: true})
-	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil)
+	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")))
 	if w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_INTERNAL {
 		t.Fatalf("malformed command ended the cast as %v", w.ended)
 	}
@@ -732,40 +715,12 @@ func TestMalformedDeviceCommandsFailTheCastBeforeTouchingTheDevice(t *testing.T)
 	}
 }
 
-func TestAWatchAskingForLinesHasThemAllBeforeTheEnd(t *testing.T) {
-	c := serve(t, setup{media: newMedia(true), family: newFamily()})
-
-	id := cast(t, c, streamOf("https://cdn.example/direct"))
-	stream, err := c.casts.Watch(t.Context(), &castorv1.WatchRequest{CastId: id, Logs: castorv1.LogLevel_LOG_LEVEL_INFO.Enum()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stream.Close()
-	var said []string
-	for stream.Receive() {
-		if line := stream.Msg().GetLine(); line != nil {
-			if len(said) == 0 {
-				if _, err := c.casts.Stop(t.Context(), &castorv1.StopRequest{CastId: id}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			said = append(said, line.GetMessage())
-		}
-		if stream.Msg().GetEnded() != nil {
-			break
-		}
-	}
-	if !slices.Contains(said, "engine let go") {
-		t.Errorf("the watch ended having sent %q, want the engine's last line before the end", said)
-	}
-}
-
 func TestALateWatcherLearnsWhereTheCastStoodAndHowItEnded(t *testing.T) {
 	c := serve(t, setup{media: newMedia(false), family: newFamily()})
 
 	id := cast(t, c, streamOf("https://cdn.example/direct"))
-	first := watch(t, c, id, nil)
-	late := watch(t, c, id, nil)
+	first := watch(t, c, id)
+	late := watch(t, c, id)
 	if len(late.shown) != 1 || !proto.Equal(late.shown[0], first.shown[len(first.shown)-1]) || !proto.Equal(late.ended, first.ended) {
 		t.Errorf("a watcher after the end was sent %v then %v, want the last status %v then %v", late.shown, late.ended, first.shown[len(first.shown)-1], first.ended)
 	}
@@ -800,7 +755,7 @@ func TestAStoppedCastReleasesItsDeviceAndIsNoLongerListed(t *testing.T) {
 		if _, err := c.casts.Stop(t.Context(), &castorv1.StopRequest{CastId: id}); err != nil {
 			t.Fatal(err)
 		}
-		if w := watch(t, c, id, nil); w.ended.GetStopped() == nil {
+		if w := watch(t, c, id); w.ended.GetStopped() == nil {
 			t.Errorf("the cast ended %v, want stopped", w.ended)
 		}
 		select {
@@ -865,7 +820,7 @@ func TestACastStoppedWhileItsPagesAreSearchedEndsStoppedWithoutPlaying(t *testin
 		if _, err := c.casts.Stop(t.Context(), &castorv1.StopRequest{CastId: id}); err != nil {
 			t.Fatal(err)
 		}
-		if w := watch(t, c, id, nil); w.ended.GetStopped() == nil {
+		if w := watch(t, c, id); w.ended.GetStopped() == nil {
 			t.Errorf("the cast ended %v, want stopped", w.ended)
 		}
 		select {
@@ -898,7 +853,7 @@ func TestAServerShuttingDownFailsItsCastsReleasingTheirDevicesAndTakesNoMore(t *
 	default:
 		t.Error("the server shut down before letting go of the device it cast on")
 	}
-	if w := watch(t, c, id, nil); w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_SERVER_SHUTDOWN || w.ended.GetFailed().GetMessage() != "server shutting down" {
+	if w := watch(t, c, id); w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_SERVER_SHUTDOWN || w.ended.GetFailed().GetMessage() != "server shutting down" {
 		t.Errorf("the cast ended %v, want it failed as the server shut down", w.ended)
 	}
 	if _, err := c.casts.Cast(t.Context(), &castorv1.CastRequest{Target: onBedroom, Source: streamOf("https://cdn.example/direct")}); connect.CodeOf(err) != connect.CodeUnavailable {
@@ -912,7 +867,7 @@ func TestACastOnADeviceThatCannotBeReachedFailsSayingSoAndStartsNothing(t *testi
 	m := newMedia(false)
 	c := serve(t, setup{media: m, family: f})
 
-	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil)
+	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")))
 	if w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_DEVICE_UNREACHABLE || !strings.Contains(w.ended.GetFailed().GetMessage(), "no answer from the device") {
 		t.Errorf("the cast ended %v, want it failed for the device that never answered", w.ended)
 	}
@@ -928,7 +883,7 @@ func TestADeviceWhoseConnectionIsGoneIsConnectedAgainToPlay(t *testing.T) {
 	f.goneFirst = true
 	c := serve(t, setup{media: newMedia(false), family: f})
 
-	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil)
+	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")))
 	if w.ended.GetCompleted() == nil {
 		t.Errorf("the cast ended %v, want it played on the device connected again", w.ended)
 	}
@@ -960,7 +915,7 @@ func TestAMediaServerRefusingThisServerIsThisServersFaultWithAHint(t *testing.T)
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "server.token") {
 		t.Errorf("a resolve the media server refused was met with %v, want an internal error naming server.token", err)
 	}
-	if w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil); w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_INTERNAL || !strings.Contains(w.ended.GetFailed().GetMessage(), "server.token") {
+	if w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct"))); w.ended.GetFailed().GetCode() != castorv1.FailureCode_FAILURE_CODE_INTERNAL || !strings.Contains(w.ended.GetFailed().GetMessage(), "server.token") {
 		t.Errorf("a cast the media server refused ended %v, want its reason naming server.token", w.ended)
 	}
 }
@@ -978,7 +933,7 @@ func TestALostMediaAnswerDoesNotBlameADeviceThatPlayed(t *testing.T) {
 		})
 	}
 	c := serve(t, setup{media: newMedia(true), family: f, guard: guard})
-	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")), nil)
+	w := watch(t, c, cast(t, c, streamOf("https://cdn.example/direct")))
 	if failure := w.ended.GetFailed(); failure.GetCode() != castorv1.FailureCode_FAILURE_CODE_INTERNAL || !strings.Contains(failure.GetMessage(), "answering device command") {
 		t.Fatalf("lost media answer ended %v, want an internal failure", w.ended)
 	}
@@ -1023,7 +978,7 @@ func TestAStopLostOnTheWayToTheMediaServerIsSentAgain(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("the media server's cast played on after its stop was lost")
 		}
-		if w := watch(t, c, id, nil); w.ended.GetStopped() == nil {
+		if w := watch(t, c, id); w.ended.GetStopped() == nil {
 			t.Errorf("the cast ended %v, want stopped", w.ended)
 		}
 	})

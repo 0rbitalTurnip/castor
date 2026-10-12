@@ -59,7 +59,7 @@ func (l *Line) Call(ctx context.Context, cmd *mediav1.DeviceCommand) (*mediav1.A
 		return nil, ErrLenderLeft
 	case <-ctx.Done():
 		// The cancel waits for the stream, never the caller that gave up.
-		go l.send(context.Background(), &mediav1.DeviceCommand{Command: &mediav1.DeviceCommand_Cancel_{Cancel: &mediav1.DeviceCommand_Cancel{CommandId: id}}})
+		go l.send(context.WithoutCancel(ctx), &mediav1.DeviceCommand{Command: &mediav1.DeviceCommand_Cancel_{Cancel: &mediav1.DeviceCommand_Cancel{CommandId: id}}})
 		return nil, ctx.Err()
 	}
 }

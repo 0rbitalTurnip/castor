@@ -32,10 +32,10 @@ type media struct {
 	driven   chan struct{}
 }
 
-const castID = "cast-1"
+const castID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func (*media) Start(context.Context, *mediav1.StartRequest) (*mediav1.StartResponse, error) {
-	return &mediav1.StartResponse{CastId: castID}, nil
+	return &mediav1.StartResponse{}, nil
 }
 
 func (*media) Stop(context.Context, *mediav1.StopRequest) (*mediav1.StopResponse, error) {
@@ -45,9 +45,6 @@ func (*media) Stop(context.Context, *mediav1.StopRequest) (*mediav1.StopResponse
 // Watch shows the cast casting, then how its device answered: ended, or failed by the device.
 func (m *media) Watch(ctx context.Context, _ *castorv1.WatchRequest, out *connect.ServerStream[castorv1.WatchResponse]) error {
 	if err := out.Send(&castorv1.WatchResponse{Update: &castorv1.WatchResponse_Status{Status: &castorv1.CastStatus{State: &castorv1.CastStatus_Casting{Casting: &castorv1.CastingStatus{Attempt: 1}}}}}); err != nil {
-		return err
-	}
-	if err := out.Send(&castorv1.WatchResponse{Update: &castorv1.WatchResponse_Line{Line: &castorv1.LogLine{Level: castorv1.LogLevel_LOG_LEVEL_INFO, Message: "casting"}}}); err != nil {
 		return err
 	}
 	select {
@@ -129,26 +126,23 @@ var asked = &mediav1.PlaybackSettings{Delivery: castorv1.Delivery_DELIVERY_AUTO,
 
 var bedroom = &castorv1.Device{Id: "dlna:uuid-1", Name: "Bedroom", Type: castorv1.DeviceType_DEVICE_TYPE_DLNA, Address: "10.0.0.9"}
 
-// watching is what a watch of a cast was shown, its lines, and how it ended.
+// watching is what a watch of a cast was shown, and how it ended.
 type watching struct {
 	shown []*castorv1.CastStatus
-	lines []*castorv1.LogLine
 	ended *castorv1.Ended
 }
 
 // cast starts a cast of one stream, lends it device and watches it to its end, returning what the watch saw and what the drive returned.
 func cast(t *testing.T, c *mediaclient.Client, lent device.Device) (watching, error) {
 	t.Helper()
-	id, err := c.Start(t.Context(), &mediav1.Source{Source: &mediav1.Source_Stream{Stream: &castorv1.Stream{Url: "https://cdn.example/direct"}}}, asked)
+	err := c.Start(t.Context(), castID, &mediav1.Source{Source: &mediav1.Source_Stream{Stream: &castorv1.Stream{Url: "https://cdn.example/direct"}}}, asked)
 	if err != nil {
 		t.Fatal(err)
 	}
 	driven := make(chan error, 1)
-	go func() { driven <- c.Drive(t.Context(), id, lent, bedroom) }()
+	go func() { driven <- c.Drive(t.Context(), castID, lent, bedroom) }()
 	var w watching
-	w.ended, err = c.Watch(t.Context(), id, castorv1.LogLevel_LOG_LEVEL_INFO.Enum(),
-		func(s *castorv1.CastStatus) { w.shown = append(w.shown, s) },
-		func(l *castorv1.LogLine) { w.lines = append(w.lines, l) })
+	w.ended, err = c.Watch(t.Context(), castID, func(s *castorv1.CastStatus) { w.shown = append(w.shown, s) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +170,8 @@ func TestADriveLendsItsDeviceForTheCastToPlayOn(t *testing.T) {
 	if driven != nil {
 		t.Errorf("the drive ended with %v", driven)
 	}
-	if w.ended.GetCompleted() == nil || len(w.shown) != 1 || w.shown[0].GetCasting().GetAttempt() != 1 || len(w.lines) != 1 {
-		t.Errorf("the watch was shown %v and %v then %v, want the cast's status and line then its end", w.shown, w.lines, w.ended)
+	if w.ended.GetCompleted() == nil || len(w.shown) != 1 || w.shown[0].GetCasting().GetAttempt() != 1 {
+		t.Errorf("the watch was shown %v then %v, want the cast's status then its end", w.shown, w.ended)
 	}
 	if got, as := taken(t, lent.played), taken(t, lent.as); got.String() != "https://cdn.example/direct" || as != mediav1.Container_CONTAINER_HLS {
 		t.Errorf("the device played %s as %v, want the stream as HLS", got, as)

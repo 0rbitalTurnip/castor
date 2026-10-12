@@ -25,9 +25,7 @@ type cast struct {
 // view is a cast at one moment.
 type view struct {
 	status *castorv1.CastStatus
-	// media is the media server's cast, once started.
-	media string
-	ended *castorv1.Ended
+	ended  *castorv1.Ended
 }
 
 func newCast(id string, device *castorv1.Device, source *castorv1.Source, stop context.CancelCauseFunc) *cast {

@@ -15,21 +15,28 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file castor/media/v1/cast.proto.
  */
 export const file_castor_media_v1_cast: GenFile = /*@__PURE__*/
-  fileDesc("ChpjYXN0b3IvbWVkaWEvdjEvY2FzdC5wcm90bxIPY2FzdG9yLm1lZGlhLnYxInwKDFN0YXJ0UmVxdWVzdBIvCgZzb3VyY2UYASABKAsyFy5jYXN0b3IubWVkaWEudjEuU291cmNlQga6SAPIAQESOwoIc2V0dGluZ3MYAiABKAsyIS5jYXN0b3IubWVkaWEudjEuUGxheWJhY2tTZXR0aW5nc0IGukgDyAEBIpsBChBQbGF5YmFja1NldHRpbmdzEjEKCGRlbGl2ZXJ5GAEgASgOMhMuY2FzdG9yLnYxLkRlbGl2ZXJ5Qgq6SAeCAQQQASAAEhsKCm1heF9oZWlnaHQYAiABKA1CB7pIBCoCKAISNwoJc3VidGl0bGVzGAMgASgLMhwuY2FzdG9yLnYxLlN1YnRpdGxlU2VsZWN0aW9uQga6SAPIAQEiKQoNU3RhcnRSZXNwb25zZRIYCgdjYXN0X2lkGAEgASgJQge6SARyAhABIicKC1N0b3BSZXF1ZXN0EhgKB2Nhc3RfaWQYASABKAlCB7pIBHICEAEiDgoMU3RvcFJlc3BvbnNlIrcBCgZTb3VyY2USIwoGc3RyZWFtGAEgASgLMhEuY2FzdG9yLnYxLlN0cmVhbUgAEjIKB3N0cmVhbXMYAiABKAsyHy5jYXN0b3IubWVkaWEudjEuU291cmNlLlN0cmVhbXNIABpDCgdTdHJlYW1zEjgKB3N0cmVhbXMYASADKAsyGi5jYXN0b3IudjEuU3RyZWFtQ2FuZGlkYXRlQgu6SAiSAQUIARDADEIPCgZzb3VyY2USBbpIAggBMtgBCgtDYXN0U2VydmljZRJGCgVTdGFydBIdLmNhc3Rvci5tZWRpYS52MS5TdGFydFJlcXVlc3QaHi5jYXN0b3IubWVkaWEudjEuU3RhcnRSZXNwb25zZRJDCgRTdG9wEhwuY2FzdG9yLm1lZGlhLnYxLlN0b3BSZXF1ZXN0Gh0uY2FzdG9yLm1lZGlhLnYxLlN0b3BSZXNwb25zZRI8CgVXYXRjaBIXLmNhc3Rvci52MS5XYXRjaFJlcXVlc3QaGC5jYXN0b3IudjEuV2F0Y2hSZXNwb25zZTABYgZwcm90bzM", [file_buf_validate_validate, file_castor_v1_cast, file_castor_v1_stream]);
+  fileDesc("ChpjYXN0b3IvbWVkaWEvdjEvY2FzdC5wcm90bxIPY2FzdG9yLm1lZGlhLnYxIqQBCgxTdGFydFJlcXVlc3QSJgoHY2FzdF9pZBgBIAEoCUIVukgSchAyDl5bQS1aMi03XXsyNn0kEi8KBnNvdXJjZRgCIAEoCzIXLmNhc3Rvci5tZWRpYS52MS5Tb3VyY2VCBrpIA8gBARI7CghzZXR0aW5ncxgDIAEoCzIhLmNhc3Rvci5tZWRpYS52MS5QbGF5YmFja1NldHRpbmdzQga6SAPIAQEimwEKEFBsYXliYWNrU2V0dGluZ3MSMQoIZGVsaXZlcnkYASABKA4yEy5jYXN0b3IudjEuRGVsaXZlcnlCCrpIB4IBBBABIAASGwoKbWF4X2hlaWdodBgCIAEoDUIHukgEKgIoAhI3CglzdWJ0aXRsZXMYAyABKAsyHC5jYXN0b3IudjEuU3VidGl0bGVTZWxlY3Rpb25CBrpIA8gBASIPCg1TdGFydFJlc3BvbnNlIicKC1N0b3BSZXF1ZXN0EhgKB2Nhc3RfaWQYASABKAlCB7pIBHICEAEiDgoMU3RvcFJlc3BvbnNlIrcBCgZTb3VyY2USIwoGc3RyZWFtGAEgASgLMhEuY2FzdG9yLnYxLlN0cmVhbUgAEjIKB3N0cmVhbXMYAiABKAsyHy5jYXN0b3IubWVkaWEudjEuU291cmNlLlN0cmVhbXNIABpDCgdTdHJlYW1zEjgKB3N0cmVhbXMYASADKAsyGi5jYXN0b3IudjEuU3RyZWFtQ2FuZGlkYXRlQgu6SAiSAQUIARDADEIPCgZzb3VyY2USBbpIAggBMtgBCgtDYXN0U2VydmljZRJGCgVTdGFydBIdLmNhc3Rvci5tZWRpYS52MS5TdGFydFJlcXVlc3QaHi5jYXN0b3IubWVkaWEudjEuU3RhcnRSZXNwb25zZRJDCgRTdG9wEhwuY2FzdG9yLm1lZGlhLnYxLlN0b3BSZXF1ZXN0Gh0uY2FzdG9yLm1lZGlhLnYxLlN0b3BSZXNwb25zZRI8CgVXYXRjaBIXLmNhc3Rvci52MS5XYXRjaFJlcXVlc3QaGC5jYXN0b3IudjEuV2F0Y2hSZXNwb25zZTABYgZwcm90bzM", [file_buf_validate_validate, file_castor_v1_cast, file_castor_v1_stream]);
 
 /**
  * @generated from message castor.media.v1.StartRequest
  */
 export type StartRequest = Message<"castor.media.v1.StartRequest"> & {
   /**
+   * cast_id is the API server's id for the cast, the one every tier logs it under; devices fetch what the cast serves by it.
+   *
+   * @generated from field: string cast_id = 1;
+   */
+  castId: string;
+
+  /**
    * source is a direct stream or resolved candidates, never unresolved pages.
    *
-   * @generated from field: castor.media.v1.Source source = 1;
+   * @generated from field: castor.media.v1.Source source = 2;
    */
   source?: Source | undefined;
 
   /**
-   * @generated from field: castor.media.v1.PlaybackSettings settings = 2;
+   * @generated from field: castor.media.v1.PlaybackSettings settings = 3;
    */
   settings?: PlaybackSettings | undefined;
 };
@@ -74,10 +81,6 @@ export const PlaybackSettingsSchema: GenMessage<PlaybackSettings> = /*@__PURE__*
  * @generated from message castor.media.v1.StartResponse
  */
 export type StartResponse = Message<"castor.media.v1.StartResponse"> & {
-  /**
-   * @generated from field: string cast_id = 1;
-   */
-  castId: string;
 };
 
 /**

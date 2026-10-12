@@ -86,16 +86,15 @@ func (s *Service) run(ctx context.Context, c *cast, target device.Info, asked *m
 
 	// Started past the caller's cancellation, so no media cast is left that nothing knows to stop.
 	starting, cancel := context.WithTimeout(context.WithoutCancel(ctx), controlTimeout)
-	media, err := s.media.Start(starting, source, asked)
+	err = s.media.Start(starting, c.id, source, asked)
 	cancel()
 	if err != nil {
 		return nil, err
 	}
-	c.update(func(v *view) { v.media = media })
 
 	watching, unwatch := context.WithCancel(context.WithoutCancel(ctx))
 	defer unwatch()
-	stopMedia := s.stopper(ctx, media, watching)
+	stopMedia := s.stopper(ctx, c.id, watching)
 	defer context.AfterFunc(ctx, stopMedia)()
 	returned := make(chan struct{})
 	defer close(returned)
@@ -113,12 +112,12 @@ func (s *Service) run(ctx context.Context, c *cast, target device.Info, asked *m
 	if ctx.Err() == nil {
 		wg.Go(func() {
 			// A lost drive ends the cast: the device is no longer lent, and a device's own failures reach the media server as answers.
-			if err := s.media.Drive(driving, media, lent, c.device); err != nil && driving.Err() == nil {
+			if err := s.media.Drive(driving, c.id, lent, c.device); err != nil && driving.Err() == nil {
 				c.stop(&castFailure{code: castorv1.FailureCode_FAILURE_CODE_INTERNAL, err: fmt.Errorf("driving the device: %w", err)})
 			}
 		})
 	}
-	ended, err := s.media.Watch(watching, media, nil, c.show, nil)
+	ended, err := s.media.Watch(watching, c.id, c.show)
 	unwatch()
 	leave()
 	wg.Wait()

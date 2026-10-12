@@ -99,6 +99,10 @@ Encoding uses a working GPU encoder, falling back to software.
 
 Castor reads `config.yaml` (or `--config <path>`), then overlays git-ignored `config.local.yaml`. Environment variables such as `CASTOR_CAST__MAX_HEIGHT=720` override both. CLI casting needs `device`; other keys have defaults. Keep secrets out of git; see [SECURITY.md](SECURITY.md).
 
+### Logs
+
+Every log line of a cast carries `cast_id`, the same in all three services, so one cast can be filtered from the rest. Set `telemetry.endpoint` (or `CASTOR_TELEMETRY__ENDPOINT`) on a server to also export its logs over OTLP/HTTP, such as `http://localhost:4318`; unset, logs stay on stderr and in `castor.log`.
+
 ### Subtitles
 
 Subtitles are burned into served, read-once video (e.g. DLNA), not self-fetching Chromecast/Roku playback. The appropriate default model downloads once to your cache.
@@ -240,7 +244,7 @@ cast:
   delivery: serve   # "auto" (the default) decides per source
 ```
 
-Try once with `CASTOR_CAST__DELIVERY=serve`; it costs bandwidth and CPU. `castor --debug` explains delivery decisions.
+Try once with `CASTOR_CAST__DELIVERY=serve`; it costs bandwidth and CPU. `castor --debug` explains delivery decisions; with servers running apart, their lines are in their own logs, filtered by `cast_id`.
 
 ## Docker
 

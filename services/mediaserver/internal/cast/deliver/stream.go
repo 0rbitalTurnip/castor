@@ -86,7 +86,7 @@ func listenStream(parent context.Context, o Opening, sp *Spool, done <-chan stru
 		return nil, err
 	}
 
-	// Close alone ends the stream; the cast lends only its values, so its lines reach its watchers.
+	// Close alone ends the stream; the cast lends only its values, so what it logs keeps the cast_id.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 	s := &Stream{
 		o:              o,

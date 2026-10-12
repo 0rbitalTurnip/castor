@@ -25,9 +25,11 @@ const (
 
 type StartRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// cast_id is the API server's id for the cast, the one every tier logs it under; devices fetch what the cast serves by it.
+	CastId string `protobuf:"bytes,1,opt,name=cast_id,json=castId,proto3" json:"cast_id,omitempty"`
 	// source is a direct stream or resolved candidates, never unresolved pages.
-	Source        *Source           `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
-	Settings      *PlaybackSettings `protobuf:"bytes,2,opt,name=settings,proto3" json:"settings,omitempty"`
+	Source        *Source           `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Settings      *PlaybackSettings `protobuf:"bytes,3,opt,name=settings,proto3" json:"settings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -60,6 +62,13 @@ func (x *StartRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StartRequest.ProtoReflect.Descriptor instead.
 func (*StartRequest) Descriptor() ([]byte, []int) {
 	return file_castor_media_v1_cast_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StartRequest) GetCastId() string {
+	if x != nil {
+		return x.CastId
+	}
+	return ""
 }
 
 func (x *StartRequest) GetSource() *Source {
@@ -139,7 +148,6 @@ func (x *PlaybackSettings) GetSubtitles() *v1.SubtitleSelection {
 
 type StartResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CastId        string                 `protobuf:"bytes,1,opt,name=cast_id,json=castId,proto3" json:"cast_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -172,13 +180,6 @@ func (x *StartResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StartResponse.ProtoReflect.Descriptor instead.
 func (*StartResponse) Descriptor() ([]byte, []int) {
 	return file_castor_media_v1_cast_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *StartResponse) GetCastId() string {
-	if x != nil {
-		return x.CastId
-	}
-	return ""
 }
 
 type StopRequest struct {
@@ -392,18 +393,18 @@ var File_castor_media_v1_cast_proto protoreflect.FileDescriptor
 
 const file_castor_media_v1_cast_proto_rawDesc = "" +
 	"\n" +
-	"\x1acastor/media/v1/cast.proto\x12\x0fcastor.media.v1\x1a\x1bbuf/validate/validate.proto\x1a\x14castor/v1/cast.proto\x1a\x16castor/v1/stream.proto\"\x8e\x01\n" +
-	"\fStartRequest\x127\n" +
-	"\x06source\x18\x01 \x01(\v2\x17.castor.media.v1.SourceB\x06\xbaH\x03\xc8\x01\x01R\x06source\x12E\n" +
-	"\bsettings\x18\x02 \x01(\v2!.castor.media.v1.PlaybackSettingsB\x06\xbaH\x03\xc8\x01\x01R\bsettings\"\xbb\x01\n" +
+	"\x1acastor/media/v1/cast.proto\x12\x0fcastor.media.v1\x1a\x1bbuf/validate/validate.proto\x1a\x14castor/v1/cast.proto\x1a\x16castor/v1/stream.proto\"\xbe\x01\n" +
+	"\fStartRequest\x12.\n" +
+	"\acast_id\x18\x01 \x01(\tB\x15\xbaH\x12r\x102\x0e^[A-Z2-7]{26}$R\x06castId\x127\n" +
+	"\x06source\x18\x02 \x01(\v2\x17.castor.media.v1.SourceB\x06\xbaH\x03\xc8\x01\x01R\x06source\x12E\n" +
+	"\bsettings\x18\x03 \x01(\v2!.castor.media.v1.PlaybackSettingsB\x06\xbaH\x03\xc8\x01\x01R\bsettings\"\xbb\x01\n" +
 	"\x10PlaybackSettings\x12;\n" +
 	"\bdelivery\x18\x01 \x01(\x0e2\x13.castor.v1.DeliveryB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bdelivery\x12&\n" +
 	"\n" +
 	"max_height\x18\x02 \x01(\rB\a\xbaH\x04*\x02(\x02R\tmaxHeight\x12B\n" +
-	"\tsubtitles\x18\x03 \x01(\v2\x1c.castor.v1.SubtitleSelectionB\x06\xbaH\x03\xc8\x01\x01R\tsubtitles\"1\n" +
-	"\rStartResponse\x12 \n" +
-	"\acast_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06castId\"/\n" +
+	"\tsubtitles\x18\x03 \x01(\v2\x1c.castor.v1.SubtitleSelectionB\x06\xbaH\x03\xc8\x01\x01R\tsubtitles\"\x0f\n" +
+	"\rStartResponse\"/\n" +
 	"\vStopRequest\x12 \n" +
 	"\acast_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06castId\"\x0e\n" +
 	"\fStopResponse\"\xd1\x01\n" +

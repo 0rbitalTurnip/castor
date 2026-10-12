@@ -3,11 +3,19 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"maps"
 	"slices"
 	"sync"
 	"time"
+)
+
+var (
+	// ErrDraining refuses a value once the registry takes no more.
+	ErrDraining = errors.New("the registry is draining")
+	// ErrTaken refuses a value under an id another still holds, or lingers under.
+	ErrTaken = errors.New("the id is taken")
 )
 
 // Registry holds values by id, each findable until linger after it is done.
@@ -25,12 +33,15 @@ func New[V any](linger time.Duration) *Registry[V] {
 	return &Registry[V]{linger: linger, byID: map[string]V{}}
 }
 
-// Add keeps v under id until linger after done closes, unless the registry is draining.
-func (r *Registry[V]) Add(id string, v V, done <-chan struct{}) bool {
+// Add keeps v under id until linger after done closes, unless the registry is draining or the id is taken.
+func (r *Registry[V]) Add(id string, v V, done <-chan struct{}) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		return false
+		return ErrDraining
+	}
+	if _, taken := r.byID[id]; taken {
+		return ErrTaken
 	}
 	r.byID[id] = v
 	r.live.Go(func() {
@@ -41,7 +52,7 @@ func (r *Registry[V]) Add(id string, v V, done <-chan struct{}) bool {
 			delete(r.byID, id)
 		})
 	})
-	return true
+	return nil
 }
 
 // Find is the value kept under id.

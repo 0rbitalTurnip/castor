@@ -4,7 +4,6 @@ package castor.v1;
 
 import "buf/validate/validate.proto";
 import "castor/v1/device.proto";
-import "castor/v1/log.proto";
 import "castor/v1/revision.proto";
 import "castor/v1/stream.proto";
 import "google/protobuf/empty.proto";
@@ -15,7 +14,7 @@ service CastService {
   rpc Cast(CastRequest) returns (CastResponse);
   // Resolve is what Cast would play from a source, best first, without casting.
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
-  // Watch sends a cast's status now and on every change (changes close together may arrive as one), its log lines when asked, and Ended last; a stream cut before Ended is an error.
+  // Watch sends a cast's status now and on every change (changes close together may arrive as one), and Ended last; a stream cut before Ended is an error.
   // A cast stays watchable for 5 minutes after its end.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc Watch(WatchRequest) returns (stream WatchResponse);
@@ -99,20 +98,13 @@ message SubtitleSelection {
 
 message WatchRequest {
   string cast_id = 1 [(buf.validate.field).string.min_len = 1];
-  // logs is the least severe line sent; unset sends none.
-  optional LogLevel logs = 2 [(buf.validate.field).enum = {
-    defined_only: true
-    not_in: [0]
-  }];
 }
 
 message WatchResponse {
   oneof update {
     option (buf.validate.oneof).required = true;
     CastStatus status = 1;
-    LogLine line = 2;
-    // ended is always the last message.
-    Ended ended = 3;
+    Ended ended = 2;
   }
 }
 

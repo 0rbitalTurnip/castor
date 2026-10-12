@@ -10,7 +10,6 @@ import (
 	"github.com/stupside/castor/gen/castor/media/v1/mediav1connect"
 	"github.com/stupside/castor/internal/transport"
 	"github.com/stupside/castor/services/mediaserver/internal/cast"
-	"github.com/stupside/castor/services/mediaserver/internal/castlog"
 	"github.com/stupside/castor/services/mediaserver/internal/mediaroute"
 )
 
@@ -25,7 +24,7 @@ type Server struct {
 func New(caster func(asked *mediav1.PlaybackSettings) cast.Caster, reach *url.URL) *Server {
 	casts := cast.New(caster, reach)
 
-	valid := transport.Checked()
+	valid := transport.Options()
 	api := http.NewServeMux()
 	api.Handle(mediav1connect.NewCastServiceHandler(casts, valid))
 	api.Handle(mediav1connect.NewDeviceServiceHandler(casts, valid))
@@ -33,7 +32,7 @@ func New(caster func(asked *mediav1.PlaybackSettings) cast.Caster, reach *url.UR
 	transport.Introspect(api, mediav1connect.CastServiceName, mediav1connect.DeviceServiceName, mediav1connect.StreamServiceName)
 	media := http.NewServeMux()
 	media.Handle(mediaroute.Pattern, mediaroute.Handler(casts.Serves))
-	return &Server{API: castlog.Served(api), Media: castlog.Served(media), casts: casts}
+	return &Server{API: api, Media: media, casts: casts}
 }
 
 // Shutdown takes no new cast, ends those running, failed as the server shuts down, and waits until they let go of what they hold, or ctx ends.

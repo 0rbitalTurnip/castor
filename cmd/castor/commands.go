@@ -35,7 +35,7 @@ func castCommand(local Local) *cli.Command {
 			if err := cfg.browsable(); err != nil {
 				return err
 			}
-			api, lines, release, err := dial(ctx, cmd, cfg.API, local)
+			api, release, err := dial(ctx, cmd, cfg.API, local)
 			if err != nil {
 				return err
 			}
@@ -53,7 +53,7 @@ func castCommand(local Local) *cli.Command {
 				return cast.DryRun(ctx, api.casts, pages(urls))
 			}
 			fmt.Printf("Casting: %s\n", sel.Title)
-			return cast.Run(ctx, api.casts, to, pages(urls), lines)
+			return cast.Run(ctx, api.casts, to, pages(urls))
 		},
 		Commands: []*cli.Command{
 			urlCommand(local),
@@ -117,7 +117,7 @@ func castSource(ctx context.Context, cmd *cli.Command, local Local, source func(
 	if err != nil {
 		return err
 	}
-	api, lines, release, err := dial(ctx, cmd, cfg.API, local)
+	api, release, err := dial(ctx, cmd, cfg.API, local)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func castSource(ctx context.Context, cmd *cli.Command, local Local, source func(
 	if err != nil {
 		return err
 	}
-	return cast.Run(ctx, api.casts, to, source(cfg), lines)
+	return cast.Run(ctx, api.casts, to, source(cfg))
 }
 
 func scanCommand(local Local) *cli.Command {
@@ -144,7 +144,7 @@ func scanCommand(local Local) *cli.Command {
 			if err != nil {
 				return err
 			}
-			api, _, release, err := dial(ctx, cmd, cfg.API, local)
+			api, release, err := dial(ctx, cmd, cfg.API, local)
 			if err != nil {
 				return err
 			}

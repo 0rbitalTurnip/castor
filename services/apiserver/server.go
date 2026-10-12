@@ -38,7 +38,7 @@ func New(b Backend, cfg CastConfig) (*Server, error) {
 	devices := device.NewDirectory(b.Devices)
 	casts := cast.New(defaults, devices, b.Media, b.Scraping)
 
-	valid := transport.Checked()
+	valid := transport.Options()
 	mux := http.NewServeMux()
 	mux.Handle(castorv1connect.NewDeviceServiceHandler(devices, valid))
 	mux.Handle(castorv1connect.NewCastServiceHandler(casts, valid))

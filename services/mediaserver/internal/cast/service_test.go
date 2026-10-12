@@ -12,6 +12,7 @@ import (
 
 	mediav1 "github.com/stupside/castor/gen/castor/media/v1"
 	castorv1 "github.com/stupside/castor/gen/castor/v1"
+	"github.com/stupside/castor/internal/castid"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/deliver"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/execute"
 	"github.com/stupside/castor/services/mediaserver/internal/cast/recovery"
@@ -22,11 +23,11 @@ import (
 func TestACastNobodyLendsADeviceIsAbandonedAfterItsGrace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		svc := New(func(*mediav1.PlaybackSettings) Caster { return nil }, &url.URL{Scheme: "http", Host: "127.0.0.1:8410"})
-		started, err := svc.Start(t.Context(), &mediav1.StartRequest{})
-		if err != nil {
+		id := castid.New()
+		if _, err := svc.Start(t.Context(), &mediav1.StartRequest{CastId: id}); err != nil {
 			t.Fatal(err)
 		}
-		s, err := svc.find(started.GetCastId())
+		s, err := svc.find(id)
 		if err != nil {
 			t.Fatal(err)
 		}

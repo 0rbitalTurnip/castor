@@ -54,8 +54,8 @@ func (c *cast) lifecycle() *fsm.FSM {
 func (c *cast) fire(event string, change func(*view)) bool {
 	taken := false
 	c.now.Update(func(now view) (view, bool) {
-		// Never the cast's context: a cancelled one would abort the transition that ends it.
-		err := c.machine.Event(context.Background(), event)
+		// Never the cast's cancellation: a cancelled context would abort the transition that ends it.
+		err := c.machine.Event(context.WithoutCancel(c.ctx), event)
 		if _, stayed := errors.AsType[fsm.NoTransitionError](err); err != nil && !stayed {
 			return now, false
 		}

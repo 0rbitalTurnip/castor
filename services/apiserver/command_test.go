@@ -3,7 +3,6 @@ package apiserver
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 
 	"github.com/stupside/castor/internal/transport"
@@ -27,7 +26,7 @@ func TestEmbeddedCompositionStartsOnlyMissingServices(t *testing.T) {
 				cfg.Scraping.URL = "http://scraping.example:8412"
 			}
 			var mediaRuns, scrapingRuns, mediaStops, scrapingStops int
-			media := func(context.Context, *cli.Command, slog.Handler) (transport.Endpoint, func(), error) {
+			media := func(context.Context, *cli.Command) (transport.Endpoint, func(), error) {
 				mediaRuns++
 				return transport.Endpoint{URL: "http://localhost:8410", Token: "media-only"}, func() { mediaStops++ }, nil
 			}
@@ -35,7 +34,7 @@ func TestEmbeddedCompositionStartsOnlyMissingServices(t *testing.T) {
 				scrapingRuns++
 				return transport.Endpoint{URL: "http://localhost:8412", Token: "scraping-only"}, func() { scrapingStops++ }, nil
 			}
-			srv, stop, err := cfg.server(t.Context(), &cli.Command{}, media, scraping, slog.Default().Handler())
+			srv, stop, err := cfg.server(t.Context(), &cli.Command{}, media, scraping)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -58,14 +57,14 @@ func TestEmbeddedCompositionStartsOnlyMissingServices(t *testing.T) {
 func TestEmbeddedResolverFailureStopsAlreadyStartedMedia(t *testing.T) {
 	cfg := defaults()
 	stopped := false
-	media := func(context.Context, *cli.Command, slog.Handler) (transport.Endpoint, func(), error) {
+	media := func(context.Context, *cli.Command) (transport.Endpoint, func(), error) {
 		return transport.Endpoint{URL: "http://localhost:8410"}, func() { stopped = true }, nil
 	}
 	failure := errors.New("resolver unavailable")
 	scraping := func(context.Context, *cli.Command) (transport.Endpoint, func(), error) {
 		return transport.Endpoint{}, nil, failure
 	}
-	if _, _, err := cfg.server(t.Context(), &cli.Command{}, media, scraping, slog.Default().Handler()); !errors.Is(err, failure) || !stopped {
+	if _, _, err := cfg.server(t.Context(), &cli.Command{}, media, scraping); !errors.Is(err, failure) || !stopped {
 		t.Fatalf("failed composition leaked media: %v, stopped=%v", err, stopped)
 	}
 }
