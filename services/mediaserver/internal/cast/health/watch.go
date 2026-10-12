@@ -264,7 +264,7 @@ func (t *tracker) report(ctx context.Context, r rule, h Vitals) {
 		return
 	}
 	t.reported = time.Now()
-	slog.InfoContext(ctx, "watch",
+	slog.DebugContext(ctx, "watch",
 		"gate", t.m.Subject,
 		"rule", r.name,
 		"media_position", h.Position.Round(time.Second),

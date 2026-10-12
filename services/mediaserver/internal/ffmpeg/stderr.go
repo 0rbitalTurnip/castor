@@ -49,7 +49,9 @@ func drainStderr(ctx context.Context, r io.Reader, tail *ringTail, markers *mark
 		if line := strings.TrimRight(string(chunk), "\r\n"); line != "" {
 			tail.Observe(line)
 			markers.Observe(line)
-			slog.DebugContext(ctx, "ffmpeg", "line", line)
+			if isComplaint(line) {
+				slog.DebugContext(ctx, "ffmpeg", "line", line)
+			}
 		}
 		switch {
 		case err == nil, errors.Is(err, bufio.ErrBufferFull):
