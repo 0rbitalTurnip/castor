@@ -37,8 +37,9 @@ jobs:
         with:
           submodules: true
       - uses: ./.github/actions/setup
-      # The real-encode tests need ffmpeg, which the runner image lacks; tested.sh fails on their skip.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The real-encode tests need ffmpeg >= 7.1 (allowed_segment_extensions); apt's 6.1 lacks it. tested.sh fails on their skip.
+      - run: |
+          curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linux64-gpl-7.1.tar.xz | sudo tar -xJ --strip-components=2 -C /usr/local/bin --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
       - run: |
           eval "$(make env)"
           CASTOR_TEST_CHROME="$(command -v google-chrome)"
@@ -58,7 +59,7 @@ jobs:
       # deadcode always exits 0, so its output is the gate; castorNativeLog is called only from C.
       - run: |
           eval "$(make env)"
-          dead=$(go run golang.org/x/tools/cmd/deadcode@v0.51.0 -test ./services/... ./internal/... ./cmd/... ./e2e/... 2>&1)
+          dead=$(go run golang.org/x/tools/cmd/deadcode@v0.51.0 -test ./services/... ./internal/... ./cmd/... ./e2e/...)
           dead=$(printf '%s' "$dead" | sed '/^services\/mediaserver\/internal\/subtitle\/whisper\/nativelog.go:[0-9]*:[0-9]*: unreachable func: castorNativeLog$/d')
           [ -z "$dead" ] || { printf 'unreachable:\n%s\n' "$dead"; exit 1; }
       # Fails with the diff it suggests: run `go fix ./...` and commit it.
