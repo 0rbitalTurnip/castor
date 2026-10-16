@@ -1,0 +1,15 @@
+# Dockerfile-specific allowlist; does not broaden the backend release context.
+**
+!package.json
+!yarn.lock
+!.yarnrc.yml
+!.yarn/
+!.yarn/releases/
+!.yarn/releases/yarn-4.18.1.cjs
+!app/
+!app/**
+app/node_modules
+app/.next
+app/.env*
+app/.yarn
+app/tests/fixtures

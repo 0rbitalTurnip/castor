@@ -9,6 +9,7 @@ import { Tv } from "@/components/tv";
 import { DeviceType, type Device } from "@/gen/castor/v1/device_pb";
 import { RefreshDevices } from "@/features/devices/refresh-devices";
 import { submitAction } from "./actions";
+import { videoUrl } from "./validation";
 
 const kinds = [["pages", "A video page"], ["stream", "A direct file"]] as const;
 const deviceTypes: Record<DeviceType, string> = {
@@ -24,6 +25,7 @@ export function CastForm({ devices, devicesError, casts }: { devices: Device[]; 
   const [kind, setKind] = useState<(typeof kinds)[number][0]>("pages");
   const [draft, setDraft] = useState("");
   const [sent, setSent] = useState<string>();
+  const [pasteError, setPasteError] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const device = devices.find((d) => d.id === deviceId);
   if (deviceId === undefined && devices.length === 1) setDeviceId(devices[0].id);
@@ -34,8 +36,8 @@ export function CastForm({ devices, devicesError, casts }: { devices: Device[]; 
   const link = draft.trim();
   let validUrl = false;
   try {
-    const url = new URL(link);
-    validUrl = /^https?:\/\//i.test(link) && (url.protocol === "https:" || url.protocol === "http:") && !!url.hostname && !/\s/.test(link);
+    videoUrl(link);
+    validUrl = true;
   } catch { /* Keep the editor available until the URL is complete. */ }
   const stage = !device ? 1 : !sent ? 2 : 3;
   const error = state.deviceId === deviceId && state.kind === kind && state.url === sent ? state.error : undefined;
@@ -49,7 +51,8 @@ export function CastForm({ devices, devicesError, casts }: { devices: Device[]; 
   const mood: Mood = error && !pending && stage === 3 ? "oops" : pending ? "think" : stage === 3 ? "cheer" : stage === 2 && link ? (validUrl ? "cheer" : "think") : "happy";
   const send = () => { if (validUrl) setSent(link.replace(/^https?:/i, (scheme) => scheme.toLowerCase())); };
   const paste = async () => {
-    try { setDraft(await navigator.clipboard.readText()); } catch { /* clipboard blocked: pasting by hand still works */ }
+    try { setDraft(await navigator.clipboard.readText()); setPasteError(""); }
+    catch { setPasteError("Clipboard access is unavailable. Paste into the link field using your keyboard or touch menu."); }
   };
 
   return <Scene screen={pending ? "loading" : "idle"} title={<>Send anything.<br /><span className="text-peach">Watch anywhere.</span></>} mood={mood}>
@@ -70,12 +73,13 @@ export function CastForm({ devices, devicesError, casts }: { devices: Device[]; 
           {kinds.map(([k, label]) => <button type="button" role="radio" aria-checked={kind === k} key={k} onClick={() => setKind(k)} className={`rounded-full border-2 px-3.5 py-1 text-xs font-extrabold transition ${kind === k ? "border-ember bg-ember text-white" : "border-white/25 text-white/70 hover:border-ember hover:text-ember"}`}>{label}</button>)}
         </div>
         <div className={`flex items-center gap-2 rounded-full border-2 bg-black/35 py-1.5 pl-5 pr-1.5 backdrop-blur-md transition ${link && !validUrl ? "border-ember" : validUrl ? "border-reed" : "border-white/20 focus-within:border-ember"}`}>
-          <input type="url" required autoFocus value={draft} aria-label="Video link" autoCapitalize="none" spellCheck={false} placeholder="Paste a link: https://" aria-invalid={!!link && !validUrl} onChange={(e) => setDraft(e.target.value)}
+          <input type="url" required maxLength={8192} autoFocus value={draft} aria-label="Video link" autoCapitalize="none" spellCheck={false} placeholder="Paste a link: https://" aria-invalid={!!link && !validUrl} onChange={(e) => { setDraft(e.target.value); setPasteError(""); }}
             className="min-w-0 flex-1 bg-transparent py-1.5 text-[15px] font-semibold text-[#fffaf2] outline-none focus-visible:outline-none placeholder:font-medium placeholder:text-muted/60" />
           {!draft && <button type="button" onClick={paste} className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-extrabold text-cream hover:bg-white/20">Paste</button>}
           <Button variant="send" type="submit" disabled={!validUrl} aria-label="Send"><span aria-hidden>↑</span></Button>
         </div>
-        {link && !validUrl && <p role="status" className="pl-4 text-xs font-bold text-ember">Use a complete http:// or https:// link, without spaces.</p>}
+        {link && !validUrl && <p role="status" className="pl-4 text-xs font-bold text-ember">Use one http:// or https:// link, without spaces or embedded login credentials.</p>}
+        {pasteError && <p role="status" className="pl-4 text-xs text-peach">{pasteError}</p>}
       </form>}
 
       {sent && <>
@@ -85,6 +89,34 @@ export function CastForm({ devices, devicesError, casts }: { devices: Device[]; 
 
       {stage === 3 && <form action={action} className="animate-rise" aria-busy={pending}>
         <input type="hidden" name="deviceId" value={device?.id} /><input type="hidden" name="kind" value={kind} /><input type="hidden" name="url" value={sent} />
+        <details className="mb-4 rounded-2xl bg-black/35 p-4 text-sm text-cream">
+          <summary className="font-bold">Playback settings (optional)</summary>
+          <fieldset disabled={pending} className="mt-4 grid gap-4">
+            <label className="grid gap-1">Delivery
+              <select name="delivery" defaultValue="" className="rounded-lg bg-ink p-2 text-cream">
+                <option value="">Server default</option>
+                <option value="1">Automatic</option>
+                <option value="2">Always relay through server</option>
+              </select>
+            </label>
+            <label className="grid gap-1">Maximum resolution
+              <select name="maxHeight" defaultValue="" className="rounded-lg bg-ink p-2 text-cream">
+                <option value="">Server default</option>
+                <option value="480">480p</option><option value="720">720p</option>
+                <option value="1080">1080p</option><option value="2160">4K (2160p)</option>
+              </select>
+            </label>
+            <label className="grid gap-1">Generated subtitles
+              <select name="subtitles" defaultValue="" className="rounded-lg bg-ink p-2 text-cream">
+                <option value="">Server default</option><option value="off">Off</option>
+                <option value="auto">Detect language</option><option value="en">English</option>
+                <option value="es">Spanish</option><option value="fr">French</option>
+                <option value="de">German</option>
+              </select>
+            </label>
+            <p className="text-xs text-cream/80">Subtitles require model downloads and extra processing. They apply to devices Castor streams to, not direct hand-offs.</p>
+          </fieldset>
+        </details>
         <Button variant="wide" disabled={pending}>{pending ? "Starting…" : error ? "Try again" : "Start casting"}</Button>
       </form>}
 

@@ -26,7 +26,7 @@ Omit `-short` for real-time end-to-end tests: fake sites/devices, real streams, 
 
 ## Running the stack with Tilt
 
-[Tilt](https://tilt.dev) runs the native stack with live reload. Also install Node 24+ and Yarn; set all three service tokens in `.env` as in `docker-compose.yml`.
+[Tilt](https://tilt.dev) runs the native stack with live reload. Also install Node 24+ and Yarn; set all three service tokens plus `CASTOR_WEB_USERNAME` and a `CASTOR_WEB_PASSWORD` of at least 32 characters in `.env`. The setup script in [SELF_HOSTING.md](SELF_HOSTING.md) generates these values without overwriting existing configuration.
 
 ```sh
 tilt up

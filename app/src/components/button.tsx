@@ -1,4 +1,5 @@
-const press = "transition hover:-translate-y-0.5 active:translate-y-1 active:shadow-none disabled:translate-y-0 disabled:opacity-40";
+// Keep the hit target stationary; translating on hover can oscillate at its edge.
+const press = "transition-colors active:shadow-none disabled:opacity-40";
 const ember = "bg-ember text-white shadow-[0_4px_0_#b9532a] hover:bg-[#ee8650]";
 
 const variants = {

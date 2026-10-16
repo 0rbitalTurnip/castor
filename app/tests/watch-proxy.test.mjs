@@ -101,3 +101,13 @@ test("an unavailable API returns a usable error without exposing the server toke
   assert.equal(body.code, "unavailable");
   assert.equal(JSON.stringify(body).includes("secret-server-token"), false);
 });
+
+test("oversized watch input is rejected without contacting the upstream API", async (t) => {
+  let calls = 0;
+  const url = await serve(t, (_req, res) => { calls++; res.end(); });
+  for (const headers of [{}, { "content-length": "100000" }]) {
+    const response = await proxyWatch(request({ headers, body: new Uint8Array(16385) }), { url, token: "secret" });
+    assert.equal(response.status, 413);
+  }
+  assert.equal(calls, 0);
+});

@@ -1,0 +1,5 @@
+# Optional Intel/AMD VA-API passthrough. Requires /dev/dri on the Linux host.
+services:
+  media-server:
+    devices:
+      - /dev/dri:/dev/dri

@@ -39,6 +39,10 @@ Castor bundles no content or sources and refuses DRM. Use only content you are a
 
 ## Quick start
 
+For the self-hosted browser interface and Linux Docker Compose setup, see
+[Self-hosting the Castor web interface](SELF_HOSTING.md). It includes separate
+browser authentication, secure-access options, and a first-cast verification checklist.
+
 Install on macOS ([other platforms](#installation)) and find your TV:
 
 ```sh

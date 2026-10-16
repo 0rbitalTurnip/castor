@@ -5,11 +5,13 @@ import { casts } from "@/lib/server";
 import { StopButton } from "./stop-button";
 import { AutoRefresh } from "./auto-refresh";
 import { journey } from "./phases";
+import { requireAccess } from "@/lib/require-access";
 
 export async function CastList() {
   let activeCasts: Cast[];
   try {
-    ({ casts: activeCasts } = await casts.listCasts({}));
+    await requireAccess();
+    ({ casts: activeCasts } = await casts.listCasts({}, { timeoutMs: 10_000 }));
   } catch (e) {
     return <section className="mt-10 max-w-md">
       <AutoRefresh />

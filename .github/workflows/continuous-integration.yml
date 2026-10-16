@@ -29,6 +29,18 @@ jobs:
       - run: node .yarn/releases/yarn-4.18.1.cjs workspace castor-app lint
       - run: node .yarn/releases/yarn-4.18.1.cjs workspace castor-app test
       - run: node .yarn/releases/yarn-4.18.1.cjs workspace castor-app build
+      - name: Validate self-hosted Compose configurations
+        env:
+          CASTOR_API__TOKEN: ci-api-token-not-a-secret
+          CASTOR_SERVER__TOKEN: ci-media-token-not-a-secret
+          CASTOR_SCRAPING__TOKEN: ci-scraping-token-not-a-secret
+          CASTOR_WEB_PASSWORD: ci-web-password-not-a-secret-32-characters
+          CASTOR_SERVER__ADVERTISE: http://192.0.2.1:8410
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f compose.gpu.yaml config --quiet
+      - name: Build production web image
+        run: docker build -f app/Dockerfile -t castor-web:ci .
 
   test:
     runs-on: ubuntu-latest

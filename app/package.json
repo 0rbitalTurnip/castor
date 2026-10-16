@@ -2,6 +2,9 @@
   "name": "castor-app",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "generate": "buf generate .. --template buf.gen.yaml",
     "dev": "next dev --turbopack",

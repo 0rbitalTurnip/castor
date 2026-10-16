@@ -25,6 +25,14 @@ Environment variables such as `CASTOR_TMDB__API_KEY` override both files. Revoke
 
 Only scraping runs Chrome and reads `browser`/`capture` settings. It uses an isolated profile and fresh randomized fingerprint, not your browser's cookies or passwords. It visits supplied pages and their loaded resources, following only HTTP(S) frames.
 
+## Browser interface
+
+The self-hosted web app requires a separate HTTP Basic login and fails closed when credentials are missing or the password is shorter than 32 characters. Authentication is checked both at the web boundary and before application actions/data access. API credentials stay server-side; the browser login does not grant direct access to backend RPC ports.
+
+The Compose UI and API bind loopback by default. Use an SSH tunnel or HTTPS reverse proxy for browser access, and preserve the original Host header through that proxy. HTTP Basic is not encrypted on plain HTTP. Keep this administration interface off the public internet.
+
+Only trusted operators should have access. HTTP(S) URL validation intentionally permits LAN media and does not prevent SSRF through redirects, DNS changes, or page subresources. The backend release image runs Chrome without its sandbox; use a dedicated VM and restrictive network access when processing untrusted pages. See [SELF_HOSTING.md](SELF_HOSTING.md) for deployment boundaries and limitations.
+
 ## Image provenance
 
 Release images include an SPDX SBOM and SLSA provenance from the [delivery workflow](.github/workflows/_delivery.yml):

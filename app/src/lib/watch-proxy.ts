@@ -20,12 +20,56 @@ export async function proxyWatch(req: Request, api: { url: string; token: string
   headers.set("accept-encoding", "identity");
   if (api.token) headers.set("authorization", `Bearer ${api.token}`);
 
+  // Watch contains only a cast ID. Bound both declared and chunked input before
+  // forwarding; the response remains a streaming body of unlimited duration.
+  const input = req.body?.getReader();
+  let inputTimedOut = false;
+  const inputTimer = setTimeout(() => {
+    inputTimedOut = true;
+    void input?.cancel().catch(() => {});
+  }, 5_000);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    if (Number(req.headers.get("content-length")) > 16_384) {
+      await input?.cancel();
+      return new Response("Watch request is too large.", { status: 413 });
+    }
+    if (input) {
+      for (;;) {
+        const { value, done } = await input.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 16_384) {
+          await input.cancel();
+          return new Response("Watch request is too large.", { status: 413 });
+        }
+        chunks.push(value);
+      }
+    }
+    if (inputTimedOut || req.signal.aborted) return new Response("Watch request timed out.", { status: 408 });
+  } catch {
+    return new Response("Could not read watch request.", { status: 400 });
+  } finally {
+    clearTimeout(inputTimer);
+    input?.releaseLock();
+    // The request abort handler is reattached below once input has been read.
+    release();
+  }
+  req.signal.addEventListener("abort", cancel, { once: true });
+  if (req.signal.aborted) cancel();
+  const requestBody = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { requestBody.set(chunk, offset); offset += chunk.length; }
+  // Only waiting for response headers is timed out, not an active status stream.
+  const headerTimer = setTimeout(() => abort.abort(), 15_000);
   try {
     const init: RequestInit & { duplex: "half" } = {
-      method: "POST", headers, body: req.body, duplex: "half",
+      method: "POST", headers, body: requestBody, duplex: "half",
       signal: abort.signal, cache: "no-store", redirect: "error",
     };
     const upstream = await fetch(`${api.url.replace(/\/+$/, "")}/castor.v1.CastService/Watch`, init);
+    clearTimeout(headerTimer);
     const responseHeaders = copyProtocolHeaders(upstream.headers);
     responseHeaders.set("cache-control", "no-store");
     responseHeaders.set("x-accel-buffering", "no");
@@ -62,5 +106,7 @@ export async function proxyWatch(req: Request, api: { url: string; token: string
     return Response.json({ code: "unavailable", message: "Can’t reach the Castor API. Try reconnecting." }, {
       status: 502, headers: { "cache-control": "no-store" },
     });
+  } finally {
+    clearTimeout(headerTimer);
   }
 }

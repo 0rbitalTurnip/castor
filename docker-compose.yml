@@ -1,11 +1,10 @@
 name: castor
 
 x-castor: &castor
-  image: ghcr.io/stupside/castor:latest
+  image: ${CASTOR_IMAGE:-ghcr.io/stupside/castor:latest}
   restart: unless-stopped
   volumes:
     - ./config.yaml:/config.yaml:ro
-    - castor-cache:/root/.cache
 
 services:
   scraping-server:
@@ -16,18 +15,23 @@ services:
     environment:
       CASTOR_SCRAPING__LISTEN: ":8412"
       CASTOR_SCRAPING__TOKEN: ${CASTOR_SCRAPING__TOKEN:?set it in .env}
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+      - scraping-cache:/root/.cache
+    shm_size: 256mb
 
   media-server:
     <<: *castor
     command: ["media-server"]
     # Linux host networking lets TVs reach the advertised media address.
     network_mode: host
-    # Intel VA-API; drop on hosts without /dev/dri.
-    devices:
-      - /dev/dri:/dev/dri
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+      - media-cache:/root/.cache
     environment:
       CASTOR_SERVER__LISTEN: ":8410"
       CASTOR_SERVER__TOKEN: ${CASTOR_SERVER__TOKEN:?set it in .env}
+      CASTOR_SERVER__ADVERTISE: ${CASTOR_SERVER__ADVERTISE:?set the media server LAN URL in .env}
 
   api-server:
     <<: *castor
@@ -38,12 +42,34 @@ services:
       - media-server
       - scraping-server
     environment:
-      CASTOR_API__LISTEN: ":8411"
+      CASTOR_API__LISTEN: "127.0.0.1:8411"
       CASTOR_API__TOKEN: ${CASTOR_API__TOKEN:?set it in .env}
       CASTOR_SERVER__URL: http://127.0.0.1:8410
       CASTOR_SERVER__TOKEN: ${CASTOR_SERVER__TOKEN:?set it in .env}
       CASTOR_SCRAPING__URL: http://127.0.0.1:8412
       CASTOR_SCRAPING__TOKEN: ${CASTOR_SCRAPING__TOKEN:?set it in .env}
 
+  web:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    depends_on:
+      - api-server
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      HOSTNAME: ${CASTOR_WEB_BIND:-127.0.0.1}
+      PORT: ${CASTOR_WEB_PORT:-3000}
+      CASTOR_API__URL: http://127.0.0.1:8411
+      CASTOR_API__TOKEN: ${CASTOR_API__TOKEN:?set it in .env}
+      CASTOR_WEB_USERNAME: ${CASTOR_WEB_USERNAME:-castor}
+      CASTOR_WEB_PASSWORD: ${CASTOR_WEB_PASSWORD:?run scripts/setup-web.sh}
+
 volumes:
-  castor-cache:
+  media-cache:
+  scraping-cache:

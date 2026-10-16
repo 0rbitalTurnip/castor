@@ -1,22 +1,21 @@
 import "server-only";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import type { PreferencesSchema, SourceSchema } from "@/gen/castor/v1/cast_pb";
+import type { formValues } from "./validation";
 
-const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
+type Values = ReturnType<typeof formValues>;
 
-export const source = (f: FormData): MessageInitShape<typeof SourceSchema> =>
-  text(f, "kind") === "pages"
-    ? { source: { case: "pages", value: { urls: text(f, "url").split(/\s+/).filter(Boolean) } } }
-    : { source: { case: "stream", value: { url: text(f, "url") } } };
+export const source = (f: Values): MessageInitShape<typeof SourceSchema> =>
+  f.kind === "pages"
+    ? { source: { case: "pages", value: { urls: [f.url] } } }
+    : { source: { case: "stream", value: { url: f.url } } };
 
 // Blank inherits the server's configuration; explicit subtitle choices set the mode.
-export const preferences = (f: FormData): MessageInitShape<typeof PreferencesSchema> => {
-  const delivery = text(f, "delivery");
-  const height = text(f, "maxHeight");
-  const subs = text(f, "subtitles");
+export const preferences = (f: Values): MessageInitShape<typeof PreferencesSchema> => {
+  const subs = f.subtitles;
   return {
-    delivery: delivery ? Number(delivery) : undefined,
-    maxHeight: height ? Number(height) : undefined,
+    delivery: f.delivery,
+    maxHeight: f.maxHeight,
     subtitles: !subs ? undefined : {
       mode: subs === "off" ? { case: "disabled", value: {} }
         : subs === "auto" ? { case: "autoDetect", value: {} }
